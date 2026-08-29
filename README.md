@@ -52,30 +52,34 @@ the repo (`dist/` is gitignored); build from source or grab them from CI.
 ## Usage
 
 ```
-usage: ansible-vault (-encrypt|-decrypt) [options] <file>
-       ansible-vault -view [options] <file>
-       ansible-vault -encrypt-inline [options] [name=]<secret>
-       ansible-vault -decrypt-inline [options] <vault-text>
+usage: ansible-vault (encrypt|decrypt|view) -file <file> [options]
+       ansible-vault (encrypt|decrypt) -inline <secret> [options]
 ```
 
-- `-encrypt` / `-decrypt` always overwrite `<file>` in place, keeping its
-  name and file permissions.
-- `-view` always leaves `<file>` untouched and prints the decrypted
-  content to stdout.
-- `-encrypt-inline` / `-decrypt-inline` take the secret directly as an
+Every invocation starts with a command — `encrypt`, `decrypt`, or `view` —
+followed by either `-file <path>` or (for `encrypt`/`decrypt`) `-inline
+<secret>`, plus any password options.
+
+- `encrypt -file` / `decrypt -file` always overwrite `<file>` in place,
+  keeping its name and file permissions.
+- `view -file` always leaves `<file>` untouched and prints the decrypted
+  content to stdout. `view` does not accept `-inline`.
+- `encrypt -inline` / `decrypt -inline` take the secret directly as an
   argument and always print the result to stdout.
+
+Run `ansible-vault <command> -h` for command-specific help.
 
 ### Encrypting and decrypting a file
 
 ```sh
 # Encrypt a file in place
-ansible-vault -encrypt secrets.yml
+ansible-vault encrypt -file secrets.yml
 
 # Decrypt a file in place
-ansible-vault -decrypt secrets.yml
+ansible-vault decrypt -file secrets.yml
 
 # View decrypted content without modifying the file
-ansible-vault -view secrets.yml
+ansible-vault view -file secrets.yml
 ```
 
 ### Inline secrets
@@ -89,20 +93,20 @@ db_password: !vault |
           663834396532363364626265666530...
 ```
 
-`-encrypt-inline` generates that block; `-decrypt-inline` reads it back:
+`encrypt -inline` generates that block; `decrypt -inline` reads it back:
 
 ```sh
 # name=secret produces "name: !vault |"
-ansible-vault -encrypt-inline "db_password=hunter2"
+ansible-vault encrypt -inline "db_password=hunter2"
 
 # just "secret" (no name=) produces a bare "!vault |" block
-ansible-vault -encrypt-inline "hunter2"
+ansible-vault encrypt -inline "hunter2"
 
-# decrypt-inline finds the $ANSIBLE_VAULT header wherever it appears,
+# decrypt -inline finds the $ANSIBLE_VAULT header wherever it appears,
 # so you can paste the block as-is — with its "name:" prefix, at whatever
 # indentation the source file used, or even with the header line itself
 # stripped off
-ansible-vault -decrypt-inline "db_password: !vault |
+ansible-vault decrypt -inline "db_password: !vault |
           \$ANSIBLE_VAULT;1.1;AES256
           663834396532363364626265666530..."
 ```
@@ -120,8 +124,8 @@ Checked in this order:
    encrypting)
 
 ```sh
-ansible-vault -decrypt -password-file ~/.vault_pass secrets.yml
-ANSIBLE_VAULT_PASSWORD=hunter2 ansible-vault -view secrets.yml
+ansible-vault decrypt -file secrets.yml -password-file ~/.vault_pass
+ANSIBLE_VAULT_PASSWORD=hunter2 ansible-vault view -file secrets.yml
 ```
 
 ## Notes

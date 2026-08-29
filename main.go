@@ -37,91 +37,111 @@ func main() {
 	}
 }
 
+// commandUsage is printed above a subcommand's flag defaults, keyed by
+// subcommand name.
+var commandUsage = map[string]string{
+	"encrypt": "usage: %[1]s encrypt -file <file> [options]\n" +
+		"       %[1]s encrypt -inline [name=]<secret> [options]\n\n" +
+		"-file overwrites <file> in place (keeping its name and permissions).\n" +
+		"-inline encrypts the secret directly and prints an inline YAML\n" +
+		"\"!vault |\" block to stdout (name= is optional; omit it for a bare block).\n\n",
+	"decrypt": "usage: %[1]s decrypt -file <file> [options]\n" +
+		"       %[1]s decrypt -inline <vault-text> [options]\n\n" +
+		"-file overwrites <file> in place (keeping its name and permissions).\n" +
+		"-inline decrypts a bare vault block or an inline \"name: !vault |\" block\n" +
+		"given directly as an argument, and prints the plaintext to stdout.\n\n",
+	"view": "usage: %[1]s view -file <file> [options]\n\n" +
+		"view always leaves <file> untouched and prints the decrypted content\n" +
+		"to stdout.\n\n",
+}
+
+const passwordSourceHelp = "The vault password comes from -password, -password-file or -password-env\n" +
+	"(checked in that order); if none of those are given, the ANSIBLE_VAULT_PASSWORD\n" +
+	"environment variable is used if set, otherwise an interactive prompt is shown.\n\noptions:\n"
+
 func run() error {
-	encrypt := flag.Bool("encrypt", false, "encrypt the input file")
-	decrypt := flag.Bool("decrypt", false, "decrypt the input file")
-	view := flag.Bool("view", false, "decrypt the input file and print it to stdout, without modifying it")
-	encryptInline := flag.String("encrypt-inline", "", "encrypt a secret into an inline YAML \"!vault |\" block; value is \"name=secret\" or just \"secret\"")
-	decryptInline := flag.String("decrypt-inline", "", "decrypt an inline \"name: !vault |\" YAML block (or bare vault text) and print the plaintext")
-	password := flag.String("password", "", "vault password given directly (insecure: visible in shell history / process list); "+
+	if len(os.Args) < 2 {
+		printTopUsage()
+		os.Exit(2)
+	}
+	command := os.Args[1]
+	if command == "-h" || command == "-help" || command == "--help" {
+		printTopUsage()
+		os.Exit(0)
+	}
+	if _, ok := commandUsage[command]; !ok {
+		fmt.Fprintf(os.Stderr, "error: unknown command %q\n\n", command)
+		printTopUsage()
+		os.Exit(2)
+	}
+
+	fs := flag.NewFlagSet(command, flag.ExitOnError)
+	file := fs.String("file", "", "file to "+command)
+	inline := fs.String("inline", "", "secret / vault text to "+command+" directly, instead of a file")
+	password := fs.String("password", "", "vault password given directly (insecure: visible in shell history / process list); "+
 		"defaults to the ANSIBLE_VAULT_PASSWORD environment variable if not set")
-	passwordFile := flag.String("password-file", "", "read the vault password from this file")
-	passwordEnv := flag.String("password-env", "", "read the vault password from this environment variable")
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: %s (-encrypt|-decrypt) [options] <file>\n"+
-			"       %s -view [options] <file>\n"+
-			"       %s -encrypt-inline [options] [name=]<secret>\n"+
-			"       %s -decrypt-inline [options] <vault-text>\n\n"+
-			"-encrypt/-decrypt always overwrite <file> in place (keeping its name\n"+
-			"and permissions). -view always leaves <file> untouched and prints the\n"+
-			"decrypted content to stdout.\n"+
-			"-encrypt-inline/-decrypt-inline take the secret directly as an argument\n"+
-			"and always print the result to stdout.\n\n"+
-			"The vault password comes from -password, -password-file or -password-env\n"+
-			"(checked in that order); if none of those are given, the ANSIBLE_VAULT_PASSWORD\n"+
-			"environment variable is used if set, otherwise an interactive prompt is shown.\n\noptions:\n",
-			os.Args[0], os.Args[0], os.Args[0], os.Args[0])
-		flag.PrintDefaults()
+	passwordFile := fs.String("password-file", "", "read the vault password from this file")
+	passwordEnv := fs.String("password-env", "", "read the vault password from this environment variable")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, commandUsage[command], os.Args[0])
+		fmt.Fprint(os.Stderr, passwordSourceHelp)
+		fs.PrintDefaults()
 	}
-	flag.Parse()
+	fs.Parse(os.Args[2:])
 
-	switch {
-	case *encryptInline != "" && *decryptInline != "":
-		fmt.Fprintln(os.Stderr, "error: specify only one of -encrypt-inline or -decrypt-inline")
-		flag.Usage()
+	if fs.NArg() != 0 {
+		fs.Usage()
 		os.Exit(2)
-	case *encryptInline != "":
-		return runEncryptInline(*encryptInline, *password, *passwordFile, *passwordEnv)
-	case *decryptInline != "":
-		return runDecryptInline(*decryptInline, *password, *passwordFile, *passwordEnv)
 	}
 
-	modeCount := 0
-	for _, set := range []bool{*encrypt, *decrypt, *view} {
-		if set {
-			modeCount++
+	if command == "view" {
+		if *file == "" || *inline != "" {
+			fmt.Fprintln(os.Stderr, "error: view requires -file and does not accept -inline")
+			fs.Usage()
+			os.Exit(2)
 		}
+		return runView(*file, *password, *passwordFile, *passwordEnv)
 	}
-	if modeCount != 1 {
-		fmt.Fprintln(os.Stderr, "error: specify exactly one of -encrypt, -decrypt or -view")
-		flag.Usage()
+
+	if (*file == "") == (*inline == "") {
+		fmt.Fprintln(os.Stderr, "error: specify exactly one of -file or -inline")
+		fs.Usage()
 		os.Exit(2)
 	}
 
-	if flag.NArg() != 1 {
-		flag.Usage()
-		os.Exit(2)
+	encrypt := command == "encrypt"
+	if *file != "" {
+		return runFile(*file, encrypt, *password, *passwordFile, *passwordEnv)
 	}
-	inputPath := flag.Arg(0)
-	info, err := os.Stat(inputPath)
+	return runInline(*inline, encrypt, *password, *passwordFile, *passwordEnv)
+}
+
+func printTopUsage() {
+	fmt.Fprintf(os.Stderr, "usage: %s (encrypt|decrypt|view) -file <file> [options]\n"+
+		"       %s (encrypt|decrypt) -inline <secret> [options]\n\n"+
+		"run '%s <command> -h' for command-specific help\n", os.Args[0], os.Args[0], os.Args[0])
+}
+
+// runFile encrypts or decrypts path in place, keeping its name and
+// permissions.
+func runFile(path string, encrypt bool, password, passwordFile, passwordEnv string) error {
+	info, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("reading input file: %w", err)
 	}
-	inputMode := info.Mode().Perm()
-	raw, err := os.ReadFile(inputPath)
+	mode := info.Mode().Perm()
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("reading input file: %w", err)
 	}
 
-	pw, err := getPassword(*password, *passwordFile, *passwordEnv, *encrypt)
+	pw, err := getPassword(password, passwordFile, passwordEnv, encrypt)
 	if err != nil {
-		return err
-	}
-
-	if *view {
-		plaintext, err := decryptVault(raw, pw)
-		if err != nil {
-			return err
-		}
-		_, err = os.Stdout.Write(plaintext)
-		if err == nil {
-			_, err = os.Stdout.Write([]byte("\n"))
-		}
 		return err
 	}
 
 	var result []byte
-	if *encrypt {
+	if encrypt {
 		result, err = encryptVault(raw, pw)
 	} else {
 		result, err = decryptVault(raw, pw)
@@ -130,45 +150,61 @@ func run() error {
 		return err
 	}
 
-	return os.WriteFile(inputPath, result, inputMode)
+	return os.WriteFile(path, result, mode)
 }
 
-// runEncryptInline encrypts a secret and prints it as an inline YAML
-// "name: !vault |" block, the format ansible expects for a single
-// vault-encrypted variable embedded in an otherwise plaintext file. arg is
-// "name=secret", or just "secret" to omit the "name:" prefix (matching
-// `ansible-vault encrypt_string` with/without --name).
-func runEncryptInline(arg, password, passwordFile, passwordEnv string) error {
-	name, secret := "", arg
-	if idx := strings.IndexByte(arg, '='); idx >= 0 {
-		name, secret = arg[:idx], arg[idx+1:]
-	}
-
-	pw, err := getPassword(password, passwordFile, passwordEnv, true)
+// runView decrypts path and prints it to stdout without modifying it.
+func runView(path, password, passwordFile, passwordEnv string) error {
+	raw, err := os.ReadFile(path)
 	if err != nil {
-		return err
-	}
-	vaultText, err := encryptVault([]byte(secret), pw)
-	if err != nil {
-		return err
+		return fmt.Errorf("reading input file: %w", err)
 	}
 
-	_, err = os.Stdout.Write(formatInlineVault(vaultText, name))
-	return err
-}
-
-// runDecryptInline decrypts an inline "name: !vault |" YAML block (or a
-// bare $ANSIBLE_VAULT block, at any indentation) and prints the plaintext.
-func runDecryptInline(arg, password, passwordFile, passwordEnv string) error {
 	pw, err := getPassword(password, passwordFile, passwordEnv, false)
 	if err != nil {
 		return err
 	}
-	plaintext, err := decryptVault([]byte(arg), pw)
+
+	plaintext, err := decryptVault(raw, pw)
+	if err != nil {
+		return err
+	}
+	_, err = os.Stdout.Write(plaintext)
+	if err == nil {
+		_, err = os.Stdout.Write([]byte("\n"))
+	}
+	return err
+}
+
+// runInline encrypts or decrypts arg directly and prints the result to
+// stdout. When encrypting, arg is "name=secret" (or just "secret" to omit
+// the "name:" prefix) and the result is rendered as the inline YAML
+// "name: !vault |" block ansible-vault itself produces. When decrypting,
+// arg is that block (or a bare vault block), and the result is the
+// plaintext secret.
+func runInline(arg string, encrypt bool, password, passwordFile, passwordEnv string) error {
+	pw, err := getPassword(password, passwordFile, passwordEnv, encrypt)
 	if err != nil {
 		return err
 	}
 
+	if encrypt {
+		name, secret := "", arg
+		if idx := strings.IndexByte(arg, '='); idx >= 0 {
+			name, secret = arg[:idx], arg[idx+1:]
+		}
+		vaultText, err := encryptVault([]byte(secret), pw)
+		if err != nil {
+			return err
+		}
+		_, err = os.Stdout.Write(formatInlineVault(vaultText, name))
+		return err
+	}
+
+	plaintext, err := decryptVault([]byte(arg), pw)
+	if err != nil {
+		return err
+	}
 	_, err = os.Stdout.Write(plaintext)
 	if err == nil {
 		_, err = os.Stdout.Write([]byte("\n"))
