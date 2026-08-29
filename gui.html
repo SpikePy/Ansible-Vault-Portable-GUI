@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ansible-vault</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #6b7280; --border: #d8dade;
+    --accent: #2563eb; --accent-fg: #ffffff; --danger: #dc2626; --ok: #16a34a;
+    --panel: #f6f7f9; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111318; --fg:#e6e6e6; --muted:#9aa0a6; --border:#2c2f36; --panel:#181b21; --accent:#3b82f6; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
+  header { padding: 1.25rem 1.5rem; border-bottom:1px solid var(--border); }
+  header h1 { margin:0; font-size:1.25rem; }
+  header p { margin:.25rem 0 0; color:var(--muted); font-size:.875rem; }
+  main { max-width: 720px; margin: 0 auto; padding: 1.5rem; }
+  .tabs { display:flex; gap:.5rem; margin-bottom:1rem; }
+  .tab { padding:.5rem 1rem; border:1px solid var(--border); border-radius:8px; background:var(--panel); cursor:pointer; font-size:.9rem; }
+  .tab.active { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+  .panel { display:none; border:1px solid var(--border); border-radius:12px; padding:1.25rem; background:var(--panel); }
+  .panel.active { display:block; }
+  label { display:block; font-size:.85rem; font-weight:600; margin-bottom:.3rem; }
+  input[type=text], input[type=password], textarea {
+    width:100%; padding:.5rem .6rem; border:1px solid var(--border); border-radius:8px;
+    background:var(--bg); color:var(--fg); font-family:var(--mono); font-size:.85rem;
+  }
+  textarea { min-height:6.5rem; resize:vertical; }
+  .row { margin-bottom: .9rem; }
+  .radio-row { display:flex; gap:1.25rem; margin-bottom:1rem; }
+  .radio-row label { display:flex; align-items:center; gap:.4rem; font-weight:500; margin-bottom:0; }
+  .radio-row input { width:auto; }
+  details { margin-bottom:1rem; border:1px solid var(--border); border-radius:8px; padding:.6rem .8rem; }
+  summary { cursor:pointer; font-size:.85rem; color:var(--muted); }
+  details .row { margin-top:.75rem; margin-bottom:0; }
+  details .row + .row { margin-top:.6rem; }
+  button { background:var(--accent); color:var(--accent-fg); border:none; padding:.6rem 1.2rem; border-radius:8px; font-size:.9rem; cursor:pointer; }
+  button:disabled { opacity:.6; cursor:default; }
+  .status { margin-top:1rem; padding:.75rem 1rem; border-radius:8px; font-size:.85rem; white-space:pre-wrap; word-break:break-word; }
+  .status.ok { background:rgba(22,163,74,.12); color:var(--ok); border:1px solid rgba(22,163,74,.35); }
+  .status.err { background:rgba(220,38,38,.12); color:var(--danger); border:1px solid rgba(220,38,38,.35); }
+  .result-box { margin-top:1rem; }
+  .result-box textarea { min-height:9rem; }
+  .copy-btn { margin-top:.5rem; background:var(--panel); color:var(--fg); border:1px solid var(--border); }
+  footer { text-align:center; color:var(--muted); font-size:.75rem; padding:2rem 0 1rem; }
+  .hint { color:var(--muted); font-size:.75rem; margin-top:.3rem; }
+
+  .path-row { display:flex; gap:.5rem; }
+  .path-row input { flex:1; }
+  .browse-btn { white-space:nowrap; background:var(--panel); color:var(--fg); border:1px solid var(--border); }
+
+  dialog#browse-dialog {
+    width:min(560px, 92vw); max-height:80vh; padding:0; border:1px solid var(--border);
+    border-radius:12px; color:var(--fg); background:var(--bg);
+  }
+  dialog#browse-dialog::backdrop { background:rgba(0,0,0,.45); }
+  .browse-header { padding:.9rem 1.1rem; border-bottom:1px solid var(--border); font-family:var(--mono); font-size:.8rem; word-break:break-all; }
+  .browse-manual-row { display:flex; gap:.5rem; padding:.75rem 1.1rem; border-bottom:1px solid var(--border); }
+  .browse-manual-row input { flex:1; }
+  .browse-list { list-style:none; margin:0; padding:.4rem; max-height:45vh; overflow-y:auto; }
+  .browse-entry { padding:.45rem .6rem; border-radius:6px; cursor:pointer; font-size:.85rem; }
+  .browse-entry:hover { background:var(--panel); }
+  .browse-entry.file { color:var(--muted); }
+  .browse-loading, .browse-error, .browse-empty { padding:.6rem; color:var(--muted); font-size:.85rem; }
+  .browse-error { color:var(--danger); }
+  .browse-actions { display:flex; justify-content:flex-end; padding:.75rem 1.1rem; border-top:1px solid var(--border); }
+  .browse-actions button { background:var(--panel); color:var(--fg); border:1px solid var(--border); }
+</style>
+</head>
+<body>
+<header>
+  <h1>ansible-vault</h1>
+  <p>Local GUI — everything runs on this machine; nothing is sent anywhere else.</p>
+</header>
+<main>
+  <div class="tabs">
+    <div class="tab active" data-tab="file">File</div>
+    <div class="tab" data-tab="inline">Inline secret</div>
+  </div>
+
+  <section class="panel active" id="panel-file">
+    <form id="form-file">
+      <div class="radio-row">
+        <label><input type="radio" name="file-action" value="encrypt" checked> Encrypt</label>
+        <label><input type="radio" name="file-action" value="decrypt"> Decrypt</label>
+        <label><input type="radio" name="file-action" value="view"> View</label>
+      </div>
+      <div class="row">
+        <label for="file-path">File path</label>
+        <div class="path-row">
+          <input type="text" id="file-path" placeholder="/path/to/secrets.yml" autocomplete="off">
+          <button type="button" class="browse-btn" data-browse-target="file-path">Browse…</button>
+        </div>
+        <p class="hint">encrypt/decrypt overwrite this file in place; view leaves it untouched.</p>
+      </div>
+
+      <details>
+        <summary>Password options (defaults to ANSIBLE_VAULT_PASSWORD env var if left blank)</summary>
+        <div class="row">
+          <label for="file-password">Password</label>
+          <input type="password" id="file-password" autocomplete="off">
+        </div>
+        <div class="row" id="file-confirm-row">
+          <label for="file-confirm">Confirm password (checked when encrypting)</label>
+          <input type="password" id="file-confirm" autocomplete="off">
+        </div>
+        <div class="row">
+          <label for="file-password-file">...or read password from file</label>
+          <div class="path-row">
+            <input type="text" id="file-password-file" placeholder="/path/to/.vault_pass" autocomplete="off">
+            <button type="button" class="browse-btn" data-browse-target="file-password-file">Browse…</button>
+          </div>
+        </div>
+        <div class="row">
+          <label for="file-password-env">...or read password from environment variable</label>
+          <input type="text" id="file-password-env" placeholder="MY_VAULT_PASSWORD" autocomplete="off">
+        </div>
+      </details>
+
+      <button type="submit">Run</button>
+      <div class="status" id="file-status" hidden></div>
+      <div class="result-box" id="file-result" hidden>
+        <label for="file-result-text">Decrypted content</label>
+        <textarea id="file-result-text" readonly></textarea>
+        <button type="button" class="copy-btn" data-copy="file-result-text">Copy</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel" id="panel-inline">
+    <form id="form-inline">
+      <div class="radio-row">
+        <label><input type="radio" name="inline-action" value="encrypt" checked> Encrypt</label>
+        <label><input type="radio" name="inline-action" value="decrypt"> Decrypt</label>
+      </div>
+
+      <div id="inline-encrypt-fields">
+        <div class="row">
+          <label for="inline-name">Variable name (optional)</label>
+          <input type="text" id="inline-name" placeholder="db_password" autocomplete="off">
+          <p class="hint">leave empty for a bare "!vault |" block without a "name:" prefix.</p>
+        </div>
+        <div class="row">
+          <label for="inline-secret">Secret</label>
+          <textarea id="inline-secret" placeholder="the value to encrypt"></textarea>
+        </div>
+      </div>
+
+      <div class="row" id="inline-decrypt-fields" hidden>
+        <label for="inline-vaulttext">Vault text</label>
+        <textarea id="inline-vaulttext" placeholder="db_password: !vault |&#10;          $ANSIBLE_VAULT;1.1;AES256&#10;          ..."></textarea>
+        <p class="hint">paste the block as-is — with or without its "name:" prefix and header line.</p>
+      </div>
+
+      <details>
+        <summary>Password options (defaults to ANSIBLE_VAULT_PASSWORD env var if left blank)</summary>
+        <div class="row">
+          <label for="inline-password">Password</label>
+          <input type="password" id="inline-password" autocomplete="off">
+        </div>
+        <div class="row" id="inline-confirm-row">
+          <label for="inline-confirm">Confirm password (checked when encrypting)</label>
+          <input type="password" id="inline-confirm" autocomplete="off">
+        </div>
+        <div class="row">
+          <label for="inline-password-file">...or read password from file</label>
+          <div class="path-row">
+            <input type="text" id="inline-password-file" placeholder="/path/to/.vault_pass" autocomplete="off">
+            <button type="button" class="browse-btn" data-browse-target="inline-password-file">Browse…</button>
+          </div>
+        </div>
+        <div class="row">
+          <label for="inline-password-env">...or read password from environment variable</label>
+          <input type="text" id="inline-password-env" placeholder="MY_VAULT_PASSWORD" autocomplete="off">
+        </div>
+      </details>
+
+      <button type="submit">Run</button>
+      <div class="status" id="inline-status" hidden></div>
+      <div class="result-box" id="inline-result" hidden>
+        <label for="inline-result-text">Result</label>
+        <textarea id="inline-result-text" readonly></textarea>
+        <button type="button" class="copy-btn" data-copy="inline-result-text">Copy</button>
+      </div>
+    </form>
+  </section>
+
+  <footer>ansible-vault · AES256 vault format 1.1/1.2</footer>
+</main>
+
+<dialog id="browse-dialog">
+  <div class="browse-header" id="browse-path"></div>
+  <div class="browse-manual-row">
+    <input type="text" id="browse-manual-path" placeholder="Jump to path…" autocomplete="off">
+    <button type="button" id="browse-go-btn">Go</button>
+  </div>
+  <ul class="browse-list" id="browse-list"></ul>
+  <div class="browse-actions">
+    <button type="button" id="browse-cancel-btn">Cancel</button>
+  </div>
+</dialog>
+
+<script>
+const TOKEN = "__TOKEN__";
+
+document.querySelectorAll('.tab').forEach(function (tab) {
+  tab.addEventListener('click', function () {
+    document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
+    document.querySelectorAll('.panel').forEach(function (p) { p.classList.remove('active'); });
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+function setStatus(el, ok, msg) {
+  el.hidden = false;
+  el.className = 'status ' + (ok ? 'ok' : 'err');
+  el.textContent = msg;
+}
+
+async function callAPI(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Vault-Token': TOKEN },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+document.querySelectorAll('.copy-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    const ta = document.getElementById(btn.dataset.copy);
+    navigator.clipboard.writeText(ta.value).then(function () {
+      const old = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(function () { btn.textContent = old; }, 1200);
+    });
+  });
+});
+
+// --- File form ---
+const fileForm = document.getElementById('form-file');
+const fileConfirmRow = document.getElementById('file-confirm-row');
+function syncFileConfirm() {
+  const action = fileForm.querySelector('input[name=file-action]:checked').value;
+  fileConfirmRow.style.display = action === 'encrypt' ? '' : 'none';
+}
+fileForm.querySelectorAll('input[name=file-action]').forEach(function (r) {
+  r.addEventListener('change', syncFileConfirm);
+});
+syncFileConfirm();
+
+fileForm.addEventListener('submit', async function (e) {
+  e.preventDefault();
+  const btn = fileForm.querySelector('button[type=submit]');
+  const statusEl = document.getElementById('file-status');
+  const resultBox = document.getElementById('file-result');
+  const resultText = document.getElementById('file-result-text');
+  statusEl.hidden = true;
+  resultBox.hidden = true;
+  btn.disabled = true;
+  try {
+    const action = fileForm.querySelector('input[name=file-action]:checked').value;
+    const body = {
+      action: action,
+      path: document.getElementById('file-path').value,
+      password: document.getElementById('file-password').value,
+      confirm: document.getElementById('file-confirm').value,
+      passwordFile: document.getElementById('file-password-file').value,
+      passwordEnv: document.getElementById('file-password-env').value,
+    };
+    const resp = await callAPI('/api/file', body);
+    if (!resp.ok) {
+      setStatus(statusEl, false, resp.message);
+      return;
+    }
+    if (action === 'view') {
+      resultText.value = resp.result;
+      resultBox.hidden = false;
+      setStatus(statusEl, true, 'Decrypted (file left unchanged).');
+    } else {
+      setStatus(statusEl, true, resp.message || 'Done.');
+    }
+  } catch (err) {
+    setStatus(statusEl, false, String(err));
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// --- Inline form ---
+const inlineForm = document.getElementById('form-inline');
+const inlineEncryptFields = document.getElementById('inline-encrypt-fields');
+const inlineDecryptFields = document.getElementById('inline-decrypt-fields');
+const inlineConfirmRow = document.getElementById('inline-confirm-row');
+function syncInlineFields() {
+  const action = inlineForm.querySelector('input[name=inline-action]:checked').value;
+  inlineEncryptFields.hidden = action !== 'encrypt';
+  inlineDecryptFields.hidden = action !== 'decrypt';
+  inlineConfirmRow.style.display = action === 'encrypt' ? '' : 'none';
+}
+inlineForm.querySelectorAll('input[name=inline-action]').forEach(function (r) {
+  r.addEventListener('change', syncInlineFields);
+});
+syncInlineFields();
+
+inlineForm.addEventListener('submit', async function (e) {
+  e.preventDefault();
+  const btn = inlineForm.querySelector('button[type=submit]');
+  const statusEl = document.getElementById('inline-status');
+  const resultBox = document.getElementById('inline-result');
+  const resultText = document.getElementById('inline-result-text');
+  statusEl.hidden = true;
+  resultBox.hidden = true;
+  btn.disabled = true;
+  try {
+    const action = inlineForm.querySelector('input[name=inline-action]:checked').value;
+    const body = {
+      action: action,
+      name: document.getElementById('inline-name').value,
+      secret: document.getElementById('inline-secret').value,
+      vaultText: document.getElementById('inline-vaulttext').value,
+      password: document.getElementById('inline-password').value,
+      confirm: document.getElementById('inline-confirm').value,
+      passwordFile: document.getElementById('inline-password-file').value,
+      passwordEnv: document.getElementById('inline-password-env').value,
+    };
+    const resp = await callAPI('/api/inline', body);
+    if (!resp.ok) {
+      setStatus(statusEl, false, resp.message);
+      return;
+    }
+    resultText.value = resp.result;
+    resultBox.hidden = false;
+    setStatus(statusEl, true, 'Done.');
+  } catch (err) {
+    setStatus(statusEl, false, String(err));
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// --- File picker dialog ---
+const browseDialog = document.getElementById('browse-dialog');
+const browsePathEl = document.getElementById('browse-path');
+const browseListEl = document.getElementById('browse-list');
+const browseManualInput = document.getElementById('browse-manual-path');
+let browseTargetInput = null;
+
+async function loadDir(path) {
+  browseListEl.innerHTML = '<li class="browse-loading">Loading…</li>';
+  const url = '/api/browse' + (path ? ('?path=' + encodeURIComponent(path)) : '');
+  let data;
+  try {
+    const res = await fetch(url, { headers: { 'X-Vault-Token': TOKEN } });
+    data = await res.json();
+  } catch (err) {
+    browseListEl.innerHTML = '';
+    const li = document.createElement('li');
+    li.className = 'browse-error';
+    li.textContent = String(err);
+    browseListEl.appendChild(li);
+    return;
+  }
+  if (!data.ok) {
+    browseListEl.innerHTML = '';
+    const li = document.createElement('li');
+    li.className = 'browse-error';
+    li.textContent = data.message;
+    browseListEl.appendChild(li);
+    return;
+  }
+
+  browsePathEl.textContent = data.path;
+  browseManualInput.value = data.path;
+  browseListEl.innerHTML = '';
+
+  if (data.parent) {
+    browseListEl.appendChild(makeBrowseEntry('.. (parent directory)', true, function () {
+      loadDir(data.parent);
+    }));
+  }
+
+  const entries = data.entries || [];
+  if (entries.length === 0 && !data.parent) {
+    const li = document.createElement('li');
+    li.className = 'browse-empty';
+    li.textContent = '(empty)';
+    browseListEl.appendChild(li);
+  }
+  entries.forEach(function (entry) {
+    browseListEl.appendChild(makeBrowseEntry(entry.name, entry.isDir, function () {
+      if (entry.isDir) {
+        loadDir(entry.path);
+      } else {
+        browseTargetInput.value = entry.path;
+        browseDialog.close();
+      }
+    }));
+  });
+}
+
+function makeBrowseEntry(label, isDir, onClick) {
+  const li = document.createElement('li');
+  li.textContent = (isDir ? '📁 ' : '📄 ') + label;
+  li.className = 'browse-entry ' + (isDir ? 'dir' : 'file');
+  li.addEventListener('click', onClick);
+  return li;
+}
+
+document.querySelectorAll('.browse-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    browseTargetInput = document.getElementById(btn.dataset.browseTarget);
+    browseDialog.showModal();
+    loadDir(browseTargetInput.value.trim());
+  });
+});
+document.getElementById('browse-go-btn').addEventListener('click', function () {
+  loadDir(browseManualInput.value.trim());
+});
+document.getElementById('browse-cancel-btn').addEventListener('click', function () {
+  browseDialog.close();
+});
+</script>
+</body>
+</html>

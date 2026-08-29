@@ -17,6 +17,8 @@ HMAC-SHA256 integrity check — the same scheme `ansible-vault` itself uses.
 - Encrypt / decrypt a single secret inline, as the
   `name: !vault |` block format Ansible uses for individual vaulted
   variables embedded in an otherwise plaintext YAML file
+- A simple local GUI (`ansible-vault gui`) covering the same operations,
+  for when you'd rather not use the CLI
 - Password via CLI flag, file, environment variable, the standard
   `ANSIBLE_VAULT_PASSWORD` environment variable, or an interactive
   (hidden-input) prompt
@@ -54,11 +56,12 @@ the repo (`dist/` is gitignored); build from source or grab them from CI.
 ```
 usage: ansible-vault (encrypt|decrypt|view) -file <file> [options]
        ansible-vault (encrypt|decrypt) -inline <secret> [options]
+       ansible-vault gui [-addr host:port]
 ```
 
-Every invocation starts with a command — `encrypt`, `decrypt`, or `view` —
-followed by either `-file <path>` or (for `encrypt`/`decrypt`) `-inline
-<secret>`, plus any password options.
+Every invocation starts with a command — `encrypt`, `decrypt`, `view`, or
+`gui` — followed by either `-file <path>` or (for `encrypt`/`decrypt`)
+`-inline <secret>`, plus any password options.
 
 - `encrypt -file` / `decrypt -file` always overwrite `<file>` in place,
   keeping its name and file permissions.
@@ -110,6 +113,35 @@ ansible-vault decrypt -inline "db_password: !vault |
           \$ANSIBLE_VAULT;1.1;AES256
           663834396532363364626265666530..."
 ```
+
+### GUI
+
+```sh
+ansible-vault gui
+```
+
+Starts a small local web server (bound to `127.0.0.1` on a random free
+port by default) serving a page with all the same operations — encrypt /
+decrypt / view a file, encrypt / decrypt an inline secret — and opens it
+in your default browser. Everything runs locally: the server only listens
+on loopback, every request must carry a random per-session token embedded
+in the page, and no file path or secret is ever sent anywhere but to your
+own machine's `localhost`. Passwords are typed directly into the page (or
+you can point it at a password file / environment variable, same as the
+CLI); leaving all three blank falls back to `ANSIBLE_VAULT_PASSWORD`, same
+as the CLI.
+
+Every file-path field (the file to encrypt/decrypt/view, and the two
+password-file fields) has a **Browse…** button next to it that opens a
+server-side directory browser — a browser's native file picker can't
+expose real filesystem paths for security reasons, so the GUI's own Go
+process lists directories for you instead and fills in the full path when
+you click a file. You can still just type or paste a path directly if you
+prefer.
+
+Stop the GUI with Ctrl+C in the terminal it's running in. Use `-addr` to
+pick a fixed host:port instead of a random one, e.g. `ansible-vault gui
+-addr 127.0.0.1:8080`.
 
 ### Supplying the password
 
