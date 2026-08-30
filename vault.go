@@ -117,6 +117,21 @@ func wrapLines(s string, width int) string {
 	return sb.String()
 }
 
+// isVaultText reports whether raw already looks like an encrypted vault
+// (any line starts with the $ANSIBLE_VAULT; header prefix). Both this
+// tool's own encryptVault output and real ansible-vault files always
+// include that header line, so this is enough to catch "encrypt" being
+// pointed at an already-encrypted file before it double-encrypts it.
+func isVaultText(raw []byte) bool {
+	text := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), vaultHeaderPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // parseVaultText parses the $ANSIBLE_VAULT envelope. The body, once
 // hex-decoded, is itself three newline-separated hex strings:
 // salt, hmac, ciphertext (see lib/ansible/parsing/vault in ansible-core).

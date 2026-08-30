@@ -120,16 +120,16 @@ ansible-vault decrypt -inline "db_password: !vault |
 ansible-vault gui
 ```
 
-Starts a small local web server (bound to `127.0.0.1` on a random free
-port by default) serving a page with all the same operations — encrypt /
-decrypt / view a file, encrypt / decrypt an inline secret — and opens it
-in your default browser. Everything runs locally: the server only listens
-on loopback, every request must carry a random per-session token embedded
-in the page, and no file path or secret is ever sent anywhere but to your
-own machine's `localhost`. Passwords are typed directly into the page (or
-you can point it at a password file / environment variable, same as the
-CLI); leaving all three blank falls back to `ANSIBLE_VAULT_PASSWORD`, same
-as the CLI.
+Starts a small local web server (bound to `127.0.0.1` on a fixed port,
+`47990`, by default) serving a page with all the same operations —
+encrypt / decrypt / view a file, encrypt / decrypt an inline secret — and
+opens it in your default browser. Everything runs locally: the server
+only listens on loopback, every request must carry a random per-session
+token embedded in the page, and no file path or secret is ever sent
+anywhere but to your own machine's `localhost`. Passwords are typed
+directly into the page (or you can point it at a password file /
+environment variable, same as the CLI); leaving all three blank falls
+back to `ANSIBLE_VAULT_PASSWORD`, same as the CLI.
 
 Every file-path field (the file to encrypt/decrypt/view, and the two
 password-file fields) has a **Browse…** button next to it that opens a
@@ -139,9 +139,20 @@ process lists directories for you instead and fills in the full path when
 you click a file. You can still just type or paste a path directly if you
 prefer.
 
-Stop the GUI with Ctrl+C in the terminal it's running in. Use `-addr` to
-pick a fixed host:port instead of a random one, e.g. `ansible-vault gui
--addr 127.0.0.1:8080`.
+**Settings are remembered.** Every field — including passwords — is saved
+to the browser's local storage as you type and restored the next time you
+open the page, so you don't have to re-enter everything each run. This is
+why the port defaults to a fixed value rather than a random one: browser
+storage is tied to the page's origin (host+port), so it would be
+forgotten on the next run if the port changed every time. This does mean
+passwords sit in plaintext in that browser profile's local storage
+indefinitely — fine for a personal machine, worth keeping in mind on a
+shared one. Only one GUI instance can use a given port at a time; run a
+second one with `-addr 127.0.0.1:<other-port>` (its browser storage, and
+therefore its remembered settings, will be separate from the default
+instance's).
+
+Stop the GUI with Ctrl+C in the terminal it's running in.
 
 ### Supplying the password
 
@@ -166,3 +177,7 @@ ANSIBLE_VAULT_PASSWORD=hunter2 ansible-vault view -file secrets.yml
   the default and by far the most common Ansible Vault format.
 - Wrong-password and corrupted-file cases are both caught by the HMAC
   check before any plaintext is produced.
+- `encrypt -file` (CLI and GUI) refuses to run if the file already looks
+  encrypted (starts with an `$ANSIBLE_VAULT;` header), so it never
+  double-encrypts a file by mistake — decrypt it first if you actually
+  want to re-encrypt it (e.g. with a new password).

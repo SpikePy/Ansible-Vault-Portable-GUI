@@ -20,6 +20,12 @@ import (
 //go:embed gui.html
 var guiHTML string
 
+// defaultGUIAddr is fixed (rather than an OS-assigned random port) so the
+// page's origin stays the same across restarts, which is what lets the
+// browser's localStorage-based settings persistence survive a restart. Only
+// one GUI instance can bind this port at a time; use -addr to run more.
+const defaultGUIAddr = "127.0.0.1:47990"
+
 // runGUI starts a local web server serving the GUI and opens it in the
 // default browser. It blocks until the server exits (Ctrl+C to stop).
 func runGUI(addr string) error {
@@ -91,7 +97,6 @@ type fileRequest struct {
 	Action       string `json:"action"` // encrypt | decrypt | view
 	Path         string `json:"path"`
 	Password     string `json:"password"`
-	Confirm      string `json:"confirm"`
 	PasswordFile string `json:"passwordFile"`
 	PasswordEnv  string `json:"passwordEnv"`
 }
@@ -107,7 +112,7 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	encrypt := req.Action == "encrypt"
-	pw, err := resolveGUIPassword(req.Password, req.Confirm, req.PasswordFile, req.PasswordEnv, encrypt)
+	pw, err := resolveGUIPassword(req.Password, req.PasswordFile, req.PasswordEnv)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -122,6 +127,10 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 	raw, err := os.ReadFile(req.Path)
 	if err != nil {
 		writeError(w, fmt.Errorf("reading input file: %w", err))
+		return
+	}
+	if encrypt && isVaultText(raw) {
+		writeError(w, fmt.Errorf("%s is already encrypted; decrypt it first if you want to re-encrypt it", req.Path))
 		return
 	}
 
@@ -152,7 +161,7 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 		if !encrypt {
 			verb = "Decrypted"
 		}
-		writeJSON(w, apiResponse{OK: true, Message: fmt.Sprintf("%s %s.", verb, req.Path)})
+		writeJSON(w, apiResponse{OK: true, Message: fmt.Sprintf("%s %s.", verb, req.Path), Result: string(result)})
 	default:
 		writeError(w, fmt.Errorf("unknown action %q", req.Action))
 	}
@@ -164,7 +173,6 @@ type inlineRequest struct {
 	Secret       string `json:"secret"`
 	VaultText    string `json:"vaultText"`
 	Password     string `json:"password"`
-	Confirm      string `json:"confirm"`
 	PasswordFile string `json:"passwordFile"`
 	PasswordEnv  string `json:"passwordEnv"`
 }
@@ -176,7 +184,7 @@ func handleInline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	encrypt := req.Action == "encrypt"
-	pw, err := resolveGUIPassword(req.Password, req.Confirm, req.PasswordFile, req.PasswordEnv, encrypt)
+	pw, err := resolveGUIPassword(req.Password, req.PasswordFile, req.PasswordEnv)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -286,19 +294,14 @@ func handleBrowse(w http.ResponseWriter, r *http.Request) {
 
 // resolveGUIPassword is resolvePassword without the CLI's interactive-prompt
 // fallback (the GUI has no terminal to prompt on) — instead it errors out
-// asking the user to fill in a password field. When encrypting with a
-// directly-typed password, it also requires the confirm field to match,
-// mirroring the CLI's double-prompt safeguard against typos.
-func resolveGUIPassword(password, confirm, passwordFile, passwordEnv string, encrypt bool) ([]byte, error) {
+// asking the user to fill in a password field.
+func resolveGUIPassword(password, passwordFile, passwordEnv string) ([]byte, error) {
 	pw, ok, err := resolvePassword(password, passwordFile, passwordEnv)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, errors.New("no password given (and ANSIBLE_VAULT_PASSWORD is not set)")
-	}
-	if encrypt && password != "" && password != confirm {
-		return nil, errors.New("passwords do not match")
 	}
 	return pw, nil
 }

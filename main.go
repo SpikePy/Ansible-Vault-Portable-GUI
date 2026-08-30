@@ -53,13 +53,14 @@ func run() error {
 
 	if command == "gui" {
 		fs := flag.NewFlagSet("gui", flag.ExitOnError)
-		addr := fs.String("addr", "127.0.0.1:0", "address to run the local GUI server on")
+		addr := fs.String("addr", defaultGUIAddr, "address to run the local GUI server on")
 		fs.Usage = func() {
 			fmt.Fprintf(os.Stderr, "usage: %s gui [-addr host:port]\n\n"+
-				"Starts a local web server (bound to 127.0.0.1 by default) serving a\n"+
-				"GUI for all encrypt/decrypt/view operations, and opens it in your\n"+
-				"default browser. The password is entered in the GUI itself, so none\n"+
-				"of -password/-password-file/-password-env apply here.\n\noptions:\n", os.Args[0])
+				"Starts a local web server (bound to 127.0.0.1 on a fixed port by\n"+
+				"default, so the page's browser-local storage survives restarts)\n"+
+				"serving a GUI for all encrypt/decrypt/view operations, and opens it\n"+
+				"in your default browser. The password is entered in the GUI itself,\n"+
+				"so none of -password/-password-file/-password-env apply here.\n\noptions:\n", os.Args[0])
 			fs.PrintDefaults()
 		}
 		fs.Parse(os.Args[2:])
@@ -131,6 +132,9 @@ func runFile(path string, encrypt bool, password, passwordFile, passwordEnv stri
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("reading input file: %w", err)
+	}
+	if encrypt && isVaultText(raw) {
+		return fmt.Errorf("%s is already encrypted; decrypt it first if you want to re-encrypt it", path)
 	}
 
 	pw, err := getPassword(password, passwordFile, passwordEnv, encrypt)

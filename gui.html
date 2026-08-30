@@ -35,10 +35,13 @@
   .radio-row { display:flex; gap:1.25rem; margin-bottom:1rem; }
   .radio-row label { display:flex; align-items:center; gap:.4rem; font-weight:500; margin-bottom:0; }
   .radio-row input { width:auto; }
-  details { margin-bottom:1rem; border:1px solid var(--border); border-radius:8px; padding:.6rem .8rem; }
-  summary { cursor:pointer; font-size:.85rem; color:var(--muted); }
-  details .row { margin-top:.75rem; margin-bottom:0; }
-  details .row + .row { margin-top:.6rem; }
+  .password-options { margin-bottom:1rem; border:1px solid var(--border); border-radius:8px; padding:.6rem .8rem; }
+  .password-options-title { font-size:.85rem; color:var(--muted); margin-bottom:.75rem; }
+  .password-options .row { margin-top:.6rem; margin-bottom:0; }
+  .password-options .row:first-of-type { margin-top:0; }
+  .password-row { display:flex; gap:.5rem; }
+  .password-row input { flex:1; }
+  .toggle-pw-btn { white-space:nowrap; background:var(--panel); color:var(--fg); border:1px solid var(--border); }
   button { background:var(--accent); color:var(--accent-fg); border:none; padding:.6rem 1.2rem; border-radius:8px; font-size:.9rem; cursor:pointer; }
   button:disabled { opacity:.6; cursor:default; }
   .status { margin-top:1rem; padding:.75rem 1rem; border-radius:8px; font-size:.85rem; white-space:pre-wrap; word-break:break-word; }
@@ -99,15 +102,14 @@
         <p class="hint">encrypt/decrypt overwrite this file in place; view leaves it untouched.</p>
       </div>
 
-      <details>
-        <summary>Password options (defaults to ANSIBLE_VAULT_PASSWORD env var if left blank)</summary>
+      <div class="password-options">
+        <div class="password-options-title">Password options (defaults to ANSIBLE_VAULT_PASSWORD env var if left blank)</div>
         <div class="row">
           <label for="file-password">Password</label>
-          <input type="password" id="file-password" autocomplete="off">
-        </div>
-        <div class="row" id="file-confirm-row">
-          <label for="file-confirm">Confirm password (checked when encrypting)</label>
-          <input type="password" id="file-confirm" autocomplete="off">
+          <div class="password-row">
+            <input type="password" id="file-password" autocomplete="off">
+            <button type="button" class="toggle-pw-btn" data-target="file-password" aria-label="Show password">👁</button>
+          </div>
         </div>
         <div class="row">
           <label for="file-password-file">...or read password from file</label>
@@ -120,12 +122,12 @@
           <label for="file-password-env">...or read password from environment variable</label>
           <input type="text" id="file-password-env" placeholder="MY_VAULT_PASSWORD" autocomplete="off">
         </div>
-      </details>
+      </div>
 
       <button type="submit">Run</button>
       <div class="status" id="file-status" hidden></div>
       <div class="result-box" id="file-result" hidden>
-        <label for="file-result-text">Decrypted content</label>
+        <label for="file-result-text" id="file-result-label">Content</label>
         <textarea id="file-result-text" readonly></textarea>
         <button type="button" class="copy-btn" data-copy="file-result-text">Copy</button>
       </div>
@@ -157,15 +159,14 @@
         <p class="hint">paste the block as-is — with or without its "name:" prefix and header line.</p>
       </div>
 
-      <details>
-        <summary>Password options (defaults to ANSIBLE_VAULT_PASSWORD env var if left blank)</summary>
+      <div class="password-options">
+        <div class="password-options-title">Password options (defaults to ANSIBLE_VAULT_PASSWORD env var if left blank)</div>
         <div class="row">
           <label for="inline-password">Password</label>
-          <input type="password" id="inline-password" autocomplete="off">
-        </div>
-        <div class="row" id="inline-confirm-row">
-          <label for="inline-confirm">Confirm password (checked when encrypting)</label>
-          <input type="password" id="inline-confirm" autocomplete="off">
+          <div class="password-row">
+            <input type="password" id="inline-password" autocomplete="off">
+            <button type="button" class="toggle-pw-btn" data-target="inline-password" aria-label="Show password">👁</button>
+          </div>
         </div>
         <div class="row">
           <label for="inline-password-file">...or read password from file</label>
@@ -178,7 +179,7 @@
           <label for="inline-password-env">...or read password from environment variable</label>
           <input type="text" id="inline-password-env" placeholder="MY_VAULT_PASSWORD" autocomplete="off">
         </div>
-      </details>
+      </div>
 
       <button type="submit">Run</button>
       <div class="status" id="inline-status" hidden></div>
@@ -232,6 +233,73 @@ async function callAPI(path, body) {
   return res.json();
 }
 
+// Persists every field in fieldIds (and, if given, the checked radio in
+// radioGroupName) to localStorage under storageKey, restoring them on load
+// and saving again on every change. This is per-browser, local-only
+// storage — settings (including passwords, since values are saved as
+// typed) never leave this machine, but they are kept in plaintext in this
+// browser profile's storage, so treat this browser profile accordingly.
+function setupPersistence(storageKey, formEl, fieldIds, radioGroupName) {
+  let stored = {};
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (raw) stored = JSON.parse(raw);
+  } catch (e) {
+    stored = {};
+  }
+
+  fieldIds.forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el && typeof stored[id] === 'string') el.value = stored[id];
+  });
+  if (radioGroupName && typeof stored[radioGroupName] === 'string') {
+    const radio = formEl.querySelector('input[name="' + radioGroupName + '"][value="' + stored[radioGroupName] + '"]');
+    if (radio) radio.checked = true;
+  }
+
+  function save() {
+    const data = {};
+    fieldIds.forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) data[id] = el.value;
+    });
+    if (radioGroupName) {
+      const checked = formEl.querySelector('input[name="' + radioGroupName + '"]:checked');
+      if (checked) data[radioGroupName] = checked.value;
+    }
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(data));
+    } catch (e) {
+      // ignore (e.g. private-browsing storage restrictions)
+    }
+  }
+
+  fieldIds.forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', save);
+  });
+  if (radioGroupName) {
+    formEl.querySelectorAll('input[name="' + radioGroupName + '"]').forEach(function (r) {
+      r.addEventListener('change', save);
+    });
+  }
+}
+
+document.querySelectorAll('.toggle-pw-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    const input = document.getElementById(btn.dataset.target);
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.textContent = '🙈';
+      btn.setAttribute('aria-label', 'Hide password');
+    } else {
+      input.type = 'password';
+      btn.textContent = '👁';
+      btn.setAttribute('aria-label', 'Show password');
+    }
+  });
+});
+
 document.querySelectorAll('.copy-btn').forEach(function (btn) {
   btn.addEventListener('click', function () {
     const ta = document.getElementById(btn.dataset.copy);
@@ -245,21 +313,18 @@ document.querySelectorAll('.copy-btn').forEach(function (btn) {
 
 // --- File form ---
 const fileForm = document.getElementById('form-file');
-const fileConfirmRow = document.getElementById('file-confirm-row');
-function syncFileConfirm() {
-  const action = fileForm.querySelector('input[name=file-action]:checked').value;
-  fileConfirmRow.style.display = action === 'encrypt' ? '' : 'none';
-}
-fileForm.querySelectorAll('input[name=file-action]').forEach(function (r) {
-  r.addEventListener('change', syncFileConfirm);
-});
-syncFileConfirm();
+setupPersistence('ansible-vault-gui:file', fileForm,
+  ['file-path', 'file-password', 'file-password-file', 'file-password-env'],
+  'file-action');
+
+const fileResultLabels = { encrypt: 'Encrypted content', decrypt: 'Decrypted content', view: 'Decrypted content' };
 
 fileForm.addEventListener('submit', async function (e) {
   e.preventDefault();
   const btn = fileForm.querySelector('button[type=submit]');
   const statusEl = document.getElementById('file-status');
   const resultBox = document.getElementById('file-result');
+  const resultLabel = document.getElementById('file-result-label');
   const resultText = document.getElementById('file-result-text');
   statusEl.hidden = true;
   resultBox.hidden = true;
@@ -270,7 +335,6 @@ fileForm.addEventListener('submit', async function (e) {
       action: action,
       path: document.getElementById('file-path').value,
       password: document.getElementById('file-password').value,
-      confirm: document.getElementById('file-confirm').value,
       passwordFile: document.getElementById('file-password-file').value,
       passwordEnv: document.getElementById('file-password-env').value,
     };
@@ -279,13 +343,10 @@ fileForm.addEventListener('submit', async function (e) {
       setStatus(statusEl, false, resp.message);
       return;
     }
-    if (action === 'view') {
-      resultText.value = resp.result;
-      resultBox.hidden = false;
-      setStatus(statusEl, true, 'Decrypted (file left unchanged).');
-    } else {
-      setStatus(statusEl, true, resp.message || 'Done.');
-    }
+    resultLabel.textContent = fileResultLabels[action] || 'Content';
+    resultText.value = resp.result;
+    resultBox.hidden = false;
+    setStatus(statusEl, true, action === 'view' ? 'Decrypted (file left unchanged).' : (resp.message || 'Done.'));
   } catch (err) {
     setStatus(statusEl, false, String(err));
   } finally {
@@ -297,16 +358,17 @@ fileForm.addEventListener('submit', async function (e) {
 const inlineForm = document.getElementById('form-inline');
 const inlineEncryptFields = document.getElementById('inline-encrypt-fields');
 const inlineDecryptFields = document.getElementById('inline-decrypt-fields');
-const inlineConfirmRow = document.getElementById('inline-confirm-row');
 function syncInlineFields() {
   const action = inlineForm.querySelector('input[name=inline-action]:checked').value;
   inlineEncryptFields.hidden = action !== 'encrypt';
   inlineDecryptFields.hidden = action !== 'decrypt';
-  inlineConfirmRow.style.display = action === 'encrypt' ? '' : 'none';
 }
 inlineForm.querySelectorAll('input[name=inline-action]').forEach(function (r) {
   r.addEventListener('change', syncInlineFields);
 });
+setupPersistence('ansible-vault-gui:inline', inlineForm,
+  ['inline-name', 'inline-secret', 'inline-vaulttext', 'inline-password', 'inline-password-file', 'inline-password-env'],
+  'inline-action');
 syncInlineFields();
 
 inlineForm.addEventListener('submit', async function (e) {
@@ -326,7 +388,6 @@ inlineForm.addEventListener('submit', async function (e) {
       secret: document.getElementById('inline-secret').value,
       vaultText: document.getElementById('inline-vaulttext').value,
       password: document.getElementById('inline-password').value,
-      confirm: document.getElementById('inline-confirm').value,
       passwordFile: document.getElementById('inline-password-file').value,
       passwordEnv: document.getElementById('inline-password-env').value,
     };
@@ -399,6 +460,10 @@ async function loadDir(path) {
         loadDir(entry.path);
       } else {
         browseTargetInput.value = entry.path;
+        // setting .value directly doesn't fire 'input', which is what
+        // setupPersistence listens on — dispatch it so the picked path
+        // is actually remembered.
+        browseTargetInput.dispatchEvent(new Event('input', { bubbles: true }));
         browseDialog.close();
       }
     }));
