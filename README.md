@@ -151,6 +151,13 @@ for you instead and fills in the full path when you click a file. You can
 still just type or paste a path directly if you prefer. The password
 field also has a show/hide toggle when in "Password" mode.
 
+Password fields use `autocomplete="new-password"`, which stops browsers'
+own password managers from offering to save or autofill them. Third-party
+password-manager extensions (Bitwarden, 1Password, etc.) generally ignore
+that hint by design and may still prompt to save — that's a limitation of
+the page having no reliable way to override another program's UI, not
+something worth fighting; just dismiss the prompt if it appears.
+
 As you type or pick a file path, the File tab shows that file's current
 raw content (up to 64 KiB) in a read-only box below the path field, so
 you can see what's actually on disk — plaintext or an existing vault

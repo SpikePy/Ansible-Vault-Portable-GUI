@@ -90,7 +90,7 @@
   </div>
 
   <section class="panel active" id="panel-file">
-    <form id="form-file">
+    <form id="form-file" autocomplete="off">
       <div class="radio-row">
         <label><input type="radio" name="file-action" value="encrypt" checked> Encrypt</label>
         <label><input type="radio" name="file-action" value="decrypt"> Decrypt</label>
@@ -110,7 +110,6 @@
       <div class="result-box" id="file-preview" hidden>
         <label for="file-preview-text">Current file content</label>
         <textarea id="file-preview-text" readonly wrap="off"></textarea>
-        <button type="button" class="copy-btn" data-copy="file-preview-text">Copy</button>
       </div>
 
       <div class="password-options">
@@ -122,7 +121,7 @@
         </div>
         <div class="row">
           <div class="password-row">
-            <input type="password" id="file-password-value" autocomplete="off">
+            <input type="password" id="file-password-value" autocomplete="new-password">
             <button type="button" class="toggle-pw-btn" data-target="file-password-value" aria-label="Show password">👁</button>
             <button type="button" class="browse-btn" data-browse-target="file-password-value" hidden>Browse…</button>
           </div>
@@ -140,7 +139,7 @@
   </section>
 
   <section class="panel" id="panel-inline">
-    <form id="form-inline">
+    <form id="form-inline" autocomplete="off">
       <div class="radio-row">
         <label><input type="radio" name="inline-action" value="encrypt" checked> Encrypt</label>
         <label><input type="radio" name="inline-action" value="decrypt"> Decrypt</label>
@@ -176,7 +175,7 @@
         </div>
         <div class="row">
           <div class="password-row">
-            <input type="password" id="inline-password-value" autocomplete="off">
+            <input type="password" id="inline-password-value" autocomplete="new-password">
             <button type="button" class="toggle-pw-btn" data-target="inline-password-value" aria-label="Show password">👁</button>
             <button type="button" class="browse-btn" data-browse-target="inline-password-value" hidden>Browse…</button>
           </div>
