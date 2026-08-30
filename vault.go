@@ -23,7 +23,7 @@ const (
 	ivLength           = 16
 	saltLength         = 32
 	lineWidth          = 80
-	inlineIndent       = "          " // matches the indentation ansible-vault itself uses for "name: !vault |" blocks
+	inlineIndent       = "    " // 4 spaces of indentation for "name: !vault |" blocks
 	defaultPasswordEnv = "ANSIBLE_VAULT_PASSWORD"
 )
 
@@ -58,7 +58,12 @@ func decryptVault(raw []byte, password []byte) ([]byte, error) {
 	return unpad(padded)
 }
 
-func encryptVault(plaintext []byte, password []byte) ([]byte, error) {
+// encryptVault encrypts plaintext into the standard vault text format. When
+// multiline is true, the hex body is wrapped at lineWidth characters per
+// line (the format ansible-vault itself produces); when false, the entire
+// hex body is emitted as a single line. Both are valid, equivalent input to
+// decryptVault/parseVaultText — this only affects how the output looks.
+func encryptVault(plaintext []byte, password []byte, multiline bool) ([]byte, error) {
 	salt := make([]byte, saltLength)
 	if _, err := rand.Read(salt); err != nil {
 		return nil, fmt.Errorf("generating salt: %w", err)
@@ -87,7 +92,11 @@ func encryptVault(plaintext []byte, password []byte) ([]byte, error) {
 	var out bytes.Buffer
 	out.WriteString(vaultHeader)
 	out.WriteByte('\n')
-	out.WriteString(wrapLines(hexBody, lineWidth))
+	if multiline {
+		out.WriteString(wrapLines(hexBody, lineWidth))
+	} else {
+		out.WriteString(hexBody)
+	}
 	out.WriteByte('\n')
 	return out.Bytes(), nil
 }

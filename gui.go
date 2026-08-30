@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -57,6 +58,7 @@ func runGUI(addr string) error {
 	mux.HandleFunc("/api/file", requireToken(token, handleFile))
 	mux.HandleFunc("/api/inline", requireToken(token, handleInline))
 	mux.HandleFunc("/api/browse", requireToken(token, handleBrowse))
+	mux.HandleFunc("/api/preview", requireToken(token, handlePreview))
 
 	url := fmt.Sprintf("http://%s/?token=%s", listener.Addr().String(), token)
 	fmt.Fprintf(os.Stderr, "ansible-vault GUI running at %s\n(Ctrl+C to stop)\n", url)
@@ -145,7 +147,7 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 	case "encrypt", "decrypt":
 		var result []byte
 		if encrypt {
-			result, err = encryptVault(raw, pw)
+			result, err = encryptVault(raw, pw, true)
 		} else {
 			result, err = decryptVault(raw, pw)
 		}
@@ -171,6 +173,7 @@ type inlineRequest struct {
 	Action       string `json:"action"` // encrypt | decrypt
 	Name         string `json:"name"`
 	Secret       string `json:"secret"`
+	Multiline    bool   `json:"multiline"` // encrypt only: wrap the hex body at 80 chars/line vs. one single line
 	VaultText    string `json:"vaultText"`
 	Password     string `json:"password"`
 	PasswordFile string `json:"passwordFile"`
@@ -195,7 +198,7 @@ func handleInline(w http.ResponseWriter, r *http.Request) {
 			writeError(w, errors.New("secret is required"))
 			return
 		}
-		vaultText, err := encryptVault([]byte(req.Secret), pw)
+		vaultText, err := encryptVault([]byte(req.Secret), pw, req.Multiline)
 		if err != nil {
 			writeError(w, err)
 			return
@@ -290,6 +293,57 @@ func handleBrowse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, browseResponse{OK: true, Path: absDir, Parent: parent, Entries: entries})
+}
+
+// previewMaxBytes caps how much of a file handlePreview reads, so a huge
+// file doesn't get read into memory and shipped to the browser wholesale.
+const previewMaxBytes = 64 * 1024
+
+type previewResponse struct {
+	OK        bool   `json:"ok"`
+	Message   string `json:"message,omitempty"`
+	Content   string `json:"content,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
+// handlePreview returns the raw (not decrypted) current content of a file,
+// so the GUI can show what's currently on disk at the given path.
+func handlePreview(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		writeJSON(w, previewResponse{OK: false, Message: "no path given"})
+		return
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		writeJSON(w, previewResponse{OK: false, Message: err.Error()})
+		return
+	}
+	if info.IsDir() {
+		writeJSON(w, previewResponse{OK: false, Message: "is a directory"})
+		return
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		writeJSON(w, previewResponse{OK: false, Message: err.Error()})
+		return
+	}
+	defer f.Close()
+
+	buf := make([]byte, previewMaxBytes+1)
+	n, err := io.ReadFull(f, buf)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		writeJSON(w, previewResponse{OK: false, Message: err.Error()})
+		return
+	}
+
+	truncated := n > previewMaxBytes
+	if truncated {
+		n = previewMaxBytes
+	}
+	writeJSON(w, previewResponse{OK: true, Content: string(buf[:n]), Truncated: truncated})
 }
 
 // resolveGUIPassword is resolvePassword without the CLI's interactive-prompt

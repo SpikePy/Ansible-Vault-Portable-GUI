@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ansible-vault</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔐</text></svg>">
 <style>
   :root {
     color-scheme: light dark;
@@ -19,7 +20,7 @@
   header { padding: 1.25rem 1.5rem; border-bottom:1px solid var(--border); }
   header h1 { margin:0; font-size:1.25rem; }
   header p { margin:.25rem 0 0; color:var(--muted); font-size:.875rem; }
-  main { max-width: 720px; margin: 0 auto; padding: 1.5rem; }
+  main { max-width: 860px; margin: 0 auto; padding: 1.5rem; }
   .tabs { display:flex; gap:.5rem; margin-bottom:1rem; }
   .tab { padding:.5rem 1rem; border:1px solid var(--border); border-radius:8px; background:var(--panel); cursor:pointer; font-size:.9rem; }
   .tab.active { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
@@ -35,6 +36,8 @@
   .radio-row { display:flex; gap:1.25rem; margin-bottom:1rem; }
   .radio-row label { display:flex; align-items:center; gap:.4rem; font-weight:500; margin-bottom:0; }
   .radio-row input { width:auto; }
+  .checkbox-label { display:flex; align-items:center; gap:.4rem; font-weight:500; cursor:pointer; }
+  .checkbox-label input { width:auto; }
   .password-options { margin-bottom:1rem; border:1px solid var(--border); border-radius:8px; padding:.6rem .8rem; }
   .password-options-title { font-size:.85rem; color:var(--muted); margin-bottom:.75rem; }
   .password-options .row { margin-top:.6rem; margin-bottom:0; }
@@ -48,7 +51,7 @@
   .status.ok { background:rgba(22,163,74,.12); color:var(--ok); border:1px solid rgba(22,163,74,.35); }
   .status.err { background:rgba(220,38,38,.12); color:var(--danger); border:1px solid rgba(220,38,38,.35); }
   .result-box { margin-top:1rem; }
-  .result-box textarea { min-height:9rem; }
+  .result-box textarea { min-height:9rem; white-space:pre; overflow-x:auto; }
   .copy-btn { margin-top:.5rem; background:var(--panel); color:var(--fg); border:1px solid var(--border); }
   footer { text-align:center; color:var(--muted); font-size:.75rem; padding:2rem 0 1rem; }
   .hint { color:var(--muted); font-size:.75rem; margin-top:.3rem; }
@@ -91,7 +94,9 @@
       <div class="radio-row">
         <label><input type="radio" name="file-action" value="encrypt" checked> Encrypt</label>
         <label><input type="radio" name="file-action" value="decrypt"> Decrypt</label>
-        <label><input type="radio" name="file-action" value="view"> View</label>
+      </div>
+      <div class="row" id="file-preview-only-row">
+        <label class="checkbox-label"><input type="checkbox" id="file-preview-only"> Just show the decrypted content, don't overwrite the file</label>
       </div>
       <div class="row">
         <label for="file-path">File path</label>
@@ -99,28 +104,28 @@
           <input type="text" id="file-path" placeholder="/path/to/secrets.yml" autocomplete="off">
           <button type="button" class="browse-btn" data-browse-target="file-path">Browse…</button>
         </div>
-        <p class="hint">encrypt/decrypt overwrite this file in place; view leaves it untouched.</p>
+        <p class="hint">encrypt always overwrites this file in place; decrypt does too, unless the checkbox above is checked.</p>
+      </div>
+
+      <div class="result-box" id="file-preview" hidden>
+        <label for="file-preview-text">Current file content</label>
+        <textarea id="file-preview-text" readonly wrap="off"></textarea>
+        <button type="button" class="copy-btn" data-copy="file-preview-text">Copy</button>
       </div>
 
       <div class="password-options">
-        <div class="password-options-title">Password options (defaults to ANSIBLE_VAULT_PASSWORD env var if left blank)</div>
+        <div class="password-options-title">Password source (defaults to ANSIBLE_VAULT_PASSWORD env var if left blank)</div>
+        <div class="radio-row">
+          <label><input type="radio" name="file-password-mode" value="password" checked> Password</label>
+          <label><input type="radio" name="file-password-mode" value="file"> Password file</label>
+          <label><input type="radio" name="file-password-mode" value="env"> Environment variable</label>
+        </div>
         <div class="row">
-          <label for="file-password">Password</label>
           <div class="password-row">
-            <input type="password" id="file-password" autocomplete="off">
-            <button type="button" class="toggle-pw-btn" data-target="file-password" aria-label="Show password">👁</button>
+            <input type="password" id="file-password-value" autocomplete="off">
+            <button type="button" class="toggle-pw-btn" data-target="file-password-value" aria-label="Show password">👁</button>
+            <button type="button" class="browse-btn" data-browse-target="file-password-value" hidden>Browse…</button>
           </div>
-        </div>
-        <div class="row">
-          <label for="file-password-file">...or read password from file</label>
-          <div class="path-row">
-            <input type="text" id="file-password-file" placeholder="/path/to/.vault_pass" autocomplete="off">
-            <button type="button" class="browse-btn" data-browse-target="file-password-file">Browse…</button>
-          </div>
-        </div>
-        <div class="row">
-          <label for="file-password-env">...or read password from environment variable</label>
-          <input type="text" id="file-password-env" placeholder="MY_VAULT_PASSWORD" autocomplete="off">
         </div>
       </div>
 
@@ -128,7 +133,7 @@
       <div class="status" id="file-status" hidden></div>
       <div class="result-box" id="file-result" hidden>
         <label for="file-result-text" id="file-result-label">Content</label>
-        <textarea id="file-result-text" readonly></textarea>
+        <textarea id="file-result-text" readonly wrap="off"></textarea>
         <button type="button" class="copy-btn" data-copy="file-result-text">Copy</button>
       </div>
     </form>
@@ -151,33 +156,30 @@
           <label for="inline-secret">Secret</label>
           <textarea id="inline-secret" placeholder="the value to encrypt"></textarea>
         </div>
+        <div class="row">
+          <label class="checkbox-label"><input type="checkbox" id="inline-multiline" checked> Wrap encrypted output at 80 characters per line</label>
+        </div>
       </div>
 
       <div class="row" id="inline-decrypt-fields" hidden>
         <label for="inline-vaulttext">Vault text</label>
-        <textarea id="inline-vaulttext" placeholder="db_password: !vault |&#10;          $ANSIBLE_VAULT;1.1;AES256&#10;          ..."></textarea>
+        <textarea id="inline-vaulttext" placeholder="db_password: !vault |&#10;    $ANSIBLE_VAULT;1.1;AES256&#10;    ..."></textarea>
         <p class="hint">paste the block as-is — with or without its "name:" prefix and header line.</p>
       </div>
 
       <div class="password-options">
-        <div class="password-options-title">Password options (defaults to ANSIBLE_VAULT_PASSWORD env var if left blank)</div>
+        <div class="password-options-title">Password source (defaults to ANSIBLE_VAULT_PASSWORD env var if left blank)</div>
+        <div class="radio-row">
+          <label><input type="radio" name="inline-password-mode" value="password" checked> Password</label>
+          <label><input type="radio" name="inline-password-mode" value="file"> Password file</label>
+          <label><input type="radio" name="inline-password-mode" value="env"> Environment variable</label>
+        </div>
         <div class="row">
-          <label for="inline-password">Password</label>
           <div class="password-row">
-            <input type="password" id="inline-password" autocomplete="off">
-            <button type="button" class="toggle-pw-btn" data-target="inline-password" aria-label="Show password">👁</button>
+            <input type="password" id="inline-password-value" autocomplete="off">
+            <button type="button" class="toggle-pw-btn" data-target="inline-password-value" aria-label="Show password">👁</button>
+            <button type="button" class="browse-btn" data-browse-target="inline-password-value" hidden>Browse…</button>
           </div>
-        </div>
-        <div class="row">
-          <label for="inline-password-file">...or read password from file</label>
-          <div class="path-row">
-            <input type="text" id="inline-password-file" placeholder="/path/to/.vault_pass" autocomplete="off">
-            <button type="button" class="browse-btn" data-browse-target="inline-password-file">Browse…</button>
-          </div>
-        </div>
-        <div class="row">
-          <label for="inline-password-env">...or read password from environment variable</label>
-          <input type="text" id="inline-password-env" placeholder="MY_VAULT_PASSWORD" autocomplete="off">
         </div>
       </div>
 
@@ -185,7 +187,7 @@
       <div class="status" id="inline-status" hidden></div>
       <div class="result-box" id="inline-result" hidden>
         <label for="inline-result-text">Result</label>
-        <textarea id="inline-result-text" readonly></textarea>
+        <textarea id="inline-result-text" readonly wrap="off"></textarea>
         <button type="button" class="copy-btn" data-copy="inline-result-text">Copy</button>
       </div>
     </form>
@@ -233,13 +235,16 @@ async function callAPI(path, body) {
   return res.json();
 }
 
-// Persists every field in fieldIds (and, if given, the checked radio in
-// radioGroupName) to localStorage under storageKey, restoring them on load
-// and saving again on every change. This is per-browser, local-only
-// storage — settings (including passwords, since values are saved as
-// typed) never leave this machine, but they are kept in plaintext in this
-// browser profile's storage, so treat this browser profile accordingly.
-function setupPersistence(storageKey, formEl, fieldIds, radioGroupName) {
+// Persists every field in fieldIds, the checked radio in each of
+// radioGroupNames, and the checked state of each id in checkboxIds, to
+// localStorage under storageKey, restoring them on load and saving again on
+// every change. This is per-browser, local-only storage — settings
+// (including passwords, since values are saved as typed) never leave this
+// machine, but they are kept in plaintext in this browser profile's
+// storage, so treat this browser profile accordingly.
+function setupPersistence(storageKey, formEl, fieldIds, radioGroupNames, checkboxIds) {
+  radioGroupNames = radioGroupNames || [];
+  checkboxIds = checkboxIds || [];
   let stored = {};
   try {
     const raw = localStorage.getItem(storageKey);
@@ -252,10 +257,15 @@ function setupPersistence(storageKey, formEl, fieldIds, radioGroupName) {
     const el = document.getElementById(id);
     if (el && typeof stored[id] === 'string') el.value = stored[id];
   });
-  if (radioGroupName && typeof stored[radioGroupName] === 'string') {
-    const radio = formEl.querySelector('input[name="' + radioGroupName + '"][value="' + stored[radioGroupName] + '"]');
+  radioGroupNames.forEach(function (name) {
+    if (typeof stored[name] !== 'string') return;
+    const radio = formEl.querySelector('input[name="' + name + '"][value="' + stored[name] + '"]');
     if (radio) radio.checked = true;
-  }
+  });
+  checkboxIds.forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el && typeof stored[id] === 'boolean') el.checked = stored[id];
+  });
 
   function save() {
     const data = {};
@@ -263,10 +273,14 @@ function setupPersistence(storageKey, formEl, fieldIds, radioGroupName) {
       const el = document.getElementById(id);
       if (el) data[id] = el.value;
     });
-    if (radioGroupName) {
-      const checked = formEl.querySelector('input[name="' + radioGroupName + '"]:checked');
-      if (checked) data[radioGroupName] = checked.value;
-    }
+    radioGroupNames.forEach(function (name) {
+      const checked = formEl.querySelector('input[name="' + name + '"]:checked');
+      if (checked) data[name] = checked.value;
+    });
+    checkboxIds.forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) data[id] = el.checked;
+    });
     try {
       localStorage.setItem(storageKey, JSON.stringify(data));
     } catch (e) {
@@ -278,11 +292,62 @@ function setupPersistence(storageKey, formEl, fieldIds, radioGroupName) {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', save);
   });
-  if (radioGroupName) {
-    formEl.querySelectorAll('input[name="' + radioGroupName + '"]').forEach(function (r) {
+  checkboxIds.forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', save);
+  });
+  radioGroupNames.forEach(function (name) {
+    formEl.querySelectorAll('input[name="' + name + '"]').forEach(function (r) {
       r.addEventListener('change', save);
     });
+  });
+}
+
+// Wires up a single password-source field: a "password"/"file"/"env" radio
+// group plus one input whose type and decorations (show/hide toggle vs.
+// Browse...) change to match the selected mode.
+function setupPasswordMode(formEl, modeGroupName, valueInputId) {
+  const input = document.getElementById(valueInputId);
+  const toggleBtn = formEl.querySelector('.toggle-pw-btn[data-target="' + valueInputId + '"]');
+  const browseBtn = formEl.querySelector('.browse-btn[data-browse-target="' + valueInputId + '"]');
+  const placeholders = { password: '', file: '/path/to/.vault_pass', env: 'MY_VAULT_PASSWORD' };
+
+  function sync() {
+    const mode = formEl.querySelector('input[name="' + modeGroupName + '"]:checked').value;
+    input.placeholder = placeholders[mode] || '';
+    if (mode === 'password') {
+      input.type = 'password';
+      toggleBtn.textContent = '👁';
+      toggleBtn.setAttribute('aria-label', 'Show password');
+      toggleBtn.hidden = false;
+      browseBtn.hidden = true;
+    } else if (mode === 'file') {
+      input.type = 'text';
+      toggleBtn.hidden = true;
+      browseBtn.hidden = false;
+    } else {
+      input.type = 'text';
+      toggleBtn.hidden = true;
+      browseBtn.hidden = true;
+    }
   }
+
+  formEl.querySelectorAll('input[name="' + modeGroupName + '"]').forEach(function (r) {
+    r.addEventListener('change', sync);
+  });
+  sync();
+}
+
+// Reads the single password-source field back into the three request
+// fields the API expects, based on which mode radio is selected.
+function passwordFieldsFromMode(formEl, modeGroupName, valueInputId) {
+  const mode = formEl.querySelector('input[name="' + modeGroupName + '"]:checked').value;
+  const value = document.getElementById(valueInputId).value;
+  return {
+    password: mode === 'password' ? value : '',
+    passwordFile: mode === 'file' ? value : '',
+    passwordEnv: mode === 'env' ? value : '',
+  };
 }
 
 document.querySelectorAll('.toggle-pw-btn').forEach(function (btn) {
@@ -313,9 +378,54 @@ document.querySelectorAll('.copy-btn').forEach(function (btn) {
 
 // --- File form ---
 const fileForm = document.getElementById('form-file');
+const filePreviewOnlyRow = document.getElementById('file-preview-only-row');
+function syncFilePreviewOnlyRow() {
+  const action = fileForm.querySelector('input[name=file-action]:checked').value;
+  filePreviewOnlyRow.hidden = action !== 'decrypt';
+}
+fileForm.querySelectorAll('input[name=file-action]').forEach(function (r) {
+  r.addEventListener('change', syncFilePreviewOnlyRow);
+});
 setupPersistence('ansible-vault-gui:file', fileForm,
-  ['file-path', 'file-password', 'file-password-file', 'file-password-env'],
-  'file-action');
+  ['file-path', 'file-password-value'],
+  ['file-action', 'file-password-mode'],
+  ['file-preview-only']);
+setupPasswordMode(fileForm, 'file-password-mode', 'file-password-value');
+syncFilePreviewOnlyRow();
+
+const filePathInput = document.getElementById('file-path');
+const filePreviewBox = document.getElementById('file-preview');
+const filePreviewText = document.getElementById('file-preview-text');
+
+async function loadFilePreview(path) {
+  if (!path) {
+    filePreviewBox.hidden = true;
+    return;
+  }
+  try {
+    const res = await fetch('/api/preview?path=' + encodeURIComponent(path), {
+      headers: { 'X-Vault-Token': TOKEN },
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      filePreviewBox.hidden = true;
+      return;
+    }
+    filePreviewText.value = data.content + (data.truncated ? '\n... (truncated)' : '');
+    filePreviewBox.hidden = false;
+  } catch (err) {
+    filePreviewBox.hidden = true;
+  }
+}
+
+let filePreviewDebounce = null;
+filePathInput.addEventListener('input', function () {
+  clearTimeout(filePreviewDebounce);
+  filePreviewDebounce = setTimeout(function () {
+    loadFilePreview(filePathInput.value.trim());
+  }, 350);
+});
+loadFilePreview(filePathInput.value.trim()); // covers a path restored from persistence
 
 const fileResultLabels = { encrypt: 'Encrypted content', decrypt: 'Decrypted content', view: 'Decrypted content' };
 
@@ -330,14 +440,14 @@ fileForm.addEventListener('submit', async function (e) {
   resultBox.hidden = true;
   btn.disabled = true;
   try {
-    const action = fileForm.querySelector('input[name=file-action]:checked').value;
-    const body = {
+    const radioAction = fileForm.querySelector('input[name=file-action]:checked').value;
+    const previewOnly = document.getElementById('file-preview-only').checked;
+    const action = (radioAction === 'decrypt' && previewOnly) ? 'view' : radioAction;
+    const path = document.getElementById('file-path').value;
+    const body = Object.assign({
       action: action,
-      path: document.getElementById('file-path').value,
-      password: document.getElementById('file-password').value,
-      passwordFile: document.getElementById('file-password-file').value,
-      passwordEnv: document.getElementById('file-password-env').value,
-    };
+      path: path,
+    }, passwordFieldsFromMode(fileForm, 'file-password-mode', 'file-password-value'));
     const resp = await callAPI('/api/file', body);
     if (!resp.ok) {
       setStatus(statusEl, false, resp.message);
@@ -347,6 +457,7 @@ fileForm.addEventListener('submit', async function (e) {
     resultText.value = resp.result;
     resultBox.hidden = false;
     setStatus(statusEl, true, action === 'view' ? 'Decrypted (file left unchanged).' : (resp.message || 'Done.'));
+    loadFilePreview(path.trim());
   } catch (err) {
     setStatus(statusEl, false, String(err));
   } finally {
@@ -367,8 +478,10 @@ inlineForm.querySelectorAll('input[name=inline-action]').forEach(function (r) {
   r.addEventListener('change', syncInlineFields);
 });
 setupPersistence('ansible-vault-gui:inline', inlineForm,
-  ['inline-name', 'inline-secret', 'inline-vaulttext', 'inline-password', 'inline-password-file', 'inline-password-env'],
-  'inline-action');
+  ['inline-name', 'inline-secret', 'inline-vaulttext', 'inline-password-value'],
+  ['inline-action', 'inline-password-mode'],
+  ['inline-multiline']);
+setupPasswordMode(inlineForm, 'inline-password-mode', 'inline-password-value');
 syncInlineFields();
 
 inlineForm.addEventListener('submit', async function (e) {
@@ -382,15 +495,13 @@ inlineForm.addEventListener('submit', async function (e) {
   btn.disabled = true;
   try {
     const action = inlineForm.querySelector('input[name=inline-action]:checked').value;
-    const body = {
+    const body = Object.assign({
       action: action,
       name: document.getElementById('inline-name').value,
       secret: document.getElementById('inline-secret').value,
+      multiline: document.getElementById('inline-multiline').checked,
       vaultText: document.getElementById('inline-vaulttext').value,
-      password: document.getElementById('inline-password').value,
-      passwordFile: document.getElementById('inline-password-file').value,
-      passwordEnv: document.getElementById('inline-password-env').value,
-    };
+    }, passwordFieldsFromMode(inlineForm, 'inline-password-mode', 'inline-password-value'));
     const resp = await callAPI('/api/inline', body);
     if (!resp.ok) {
       setStatus(statusEl, false, resp.message);

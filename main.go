@@ -144,7 +144,7 @@ func runFile(path string, encrypt bool, password, passwordFile, passwordEnv stri
 
 	var result []byte
 	if encrypt {
-		result, err = encryptVault(raw, pw)
+		result, err = encryptVault(raw, pw, true)
 	} else {
 		result, err = decryptVault(raw, pw)
 	}
@@ -195,7 +195,7 @@ func runInline(arg string, encrypt bool, password, passwordFile, passwordEnv str
 		if idx := strings.IndexByte(arg, '='); idx >= 0 {
 			name, secret = arg[:idx], arg[idx+1:]
 		}
-		vaultText, err := encryptVault([]byte(secret), pw)
+		vaultText, err := encryptVault([]byte(secret), pw, true)
 		if err != nil {
 			return err
 		}

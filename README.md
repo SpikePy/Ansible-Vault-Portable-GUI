@@ -92,8 +92,8 @@ plaintext file, using an inline `!vault` block:
 
 ```yaml
 db_password: !vault |
-          $ANSIBLE_VAULT;1.1;AES256
-          663834396532363364626265666530...
+    $ANSIBLE_VAULT;1.1;AES256
+    663834396532363364626265666530...
 ```
 
 `encrypt -inline` generates that block; `decrypt -inline` reads it back:
@@ -110,8 +110,8 @@ ansible-vault encrypt -inline "hunter2"
 # indentation the source file used, or even with the header line itself
 # stripped off
 ansible-vault decrypt -inline "db_password: !vault |
-          \$ANSIBLE_VAULT;1.1;AES256
-          663834396532363364626265666530..."
+    \$ANSIBLE_VAULT;1.1;AES256
+    663834396532363364626265666530..."
 ```
 
 ### GUI
@@ -122,22 +122,40 @@ ansible-vault gui
 
 Starts a small local web server (bound to `127.0.0.1` on a fixed port,
 `47990`, by default) serving a page with all the same operations —
-encrypt / decrypt / view a file, encrypt / decrypt an inline secret — and
-opens it in your default browser. Everything runs locally: the server
-only listens on loopback, every request must carry a random per-session
-token embedded in the page, and no file path or secret is ever sent
-anywhere but to your own machine's `localhost`. Passwords are typed
-directly into the page (or you can point it at a password file /
-environment variable, same as the CLI); leaving all three blank falls
-back to `ANSIBLE_VAULT_PASSWORD`, same as the CLI.
+encrypt / decrypt a file, encrypt / decrypt an inline secret — and opens
+it in your default browser. Everything runs locally: the server only
+listens on loopback, every request must carry a random per-session token
+embedded in the page, and no file path or secret is ever sent anywhere
+but to your own machine's `localhost`. Each form has a single password
+field plus a "Password" / "Password file" / "Environment variable" radio
+choice next to it, mirroring the CLI's `-password` / `-password-file` /
+`-password-env`; leaving it blank falls back to `ANSIBLE_VAULT_PASSWORD`,
+same as the CLI.
 
-Every file-path field (the file to encrypt/decrypt/view, and the two
-password-file fields) has a **Browse…** button next to it that opens a
-server-side directory browser — a browser's native file picker can't
-expose real filesystem paths for security reasons, so the GUI's own Go
-process lists directories for you instead and fills in the full path when
-you click a file. You can still just type or paste a path directly if you
-prefer.
+The File tab has an Encrypt/Decrypt radio and a "just show the decrypted
+content, don't overwrite the file" checkbox — check it before running
+Decrypt to preview a file's content without touching it (equivalent to
+the CLI's `view`); leave it unchecked and Decrypt overwrites the file in
+place, same as `decrypt -file`. Encrypt always overwrites.
+
+The Inline tab's Encrypt mode has a "wrap encrypted output at 80
+characters per line" checkbox (checked by default) — uncheck it to get
+the whole hex body as a single line instead of the usual 80-char-wrapped
+block. Both forms decrypt identically either way.
+
+The file-path field and the password field, when set to "Password file"
+mode, both have a **Browse…** button that opens a server-side directory
+browser — a browser's native file picker can't expose real filesystem
+paths for security reasons, so the GUI's own Go process lists directories
+for you instead and fills in the full path when you click a file. You can
+still just type or paste a path directly if you prefer. The password
+field also has a show/hide toggle when in "Password" mode.
+
+As you type or pick a file path, the File tab shows that file's current
+raw content (up to 64 KiB) in a read-only box below the path field, so
+you can see what's actually on disk — plaintext or an existing vault
+block — before deciding what to run. It refreshes automatically after
+encrypt/decrypt.
 
 **Settings are remembered.** Every field — including passwords — is saved
 to the browser's local storage as you type and restored the next time you
