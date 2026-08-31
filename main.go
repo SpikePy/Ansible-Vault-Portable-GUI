@@ -21,24 +21,39 @@ func main() {
 // commandUsage is printed above a subcommand's flag defaults, keyed by
 // subcommand name.
 var commandUsage = map[string]string{
-	"encrypt": "usage: %[1]s encrypt -file <file> [options]\n" +
-		"       %[1]s encrypt -inline [name=]<secret> [options]\n\n" +
-		"-file overwrites <file> in place (keeping its name and permissions).\n" +
-		"-inline encrypts the secret directly and prints an inline YAML\n" +
+	"encrypt": "usage: %[1]s encrypt --file <file> [options]\n" +
+		"       %[1]s encrypt --inline [name=]<secret> [options]\n\n" +
+		"--file overwrites <file> in place (keeping its name and permissions).\n" +
+		"--inline encrypts the secret directly and prints an inline YAML\n" +
 		"\"!vault |\" block to stdout (name= is optional; omit it for a bare block).\n\n",
-	"decrypt": "usage: %[1]s decrypt -file <file> [options]\n" +
-		"       %[1]s decrypt -inline <vault-text> [options]\n\n" +
-		"-file overwrites <file> in place (keeping its name and permissions).\n" +
-		"-inline decrypts a bare vault block or an inline \"name: !vault |\" block\n" +
+	"decrypt": "usage: %[1]s decrypt --file <file> [options]\n" +
+		"       %[1]s decrypt --inline <vault-text> [options]\n\n" +
+		"--file overwrites <file> in place (keeping its name and permissions).\n" +
+		"--inline decrypts a bare vault block or an inline \"name: !vault |\" block\n" +
 		"given directly as an argument, and prints the plaintext to stdout.\n\n",
-	"view": "usage: %[1]s view -file <file> [options]\n\n" +
+	"view": "usage: %[1]s view --file <file> [options]\n\n" +
 		"view always leaves <file> untouched and prints the decrypted content\n" +
 		"to stdout.\n\n",
 }
 
-const passwordSourceHelp = "The vault password comes from -password, -password-file or -password-env\n" +
+const passwordSourceHelp = "The vault password comes from --password, --password-file or --password-env\n" +
 	"(checked in that order); if none of those are given, the ANSIBLE_VAULT_PASSWORD\n" +
-	"environment variable is used if set, otherwise an interactive prompt is shown.\n\noptions:\n"
+	"environment variable is used if set, otherwise an interactive prompt is shown.\n\n" +
+	"Options may be given as \"--flag value\" or \"--flag=value\".\n\noptions:\n"
+
+// printFlagDefaults is flag.FlagSet.PrintDefaults, but rendered with
+// double-dash flag names ("--file" rather than "-file") to match this
+// tool's documented long-option style; the flags themselves still accept
+// either a single or double leading dash (that's a built-in behavior of the
+// flag package, not something this changes).
+func printFlagDefaults(fs *flag.FlagSet) {
+	var buf bytes.Buffer
+	out := fs.Output()
+	fs.SetOutput(&buf)
+	fs.PrintDefaults()
+	fs.SetOutput(out)
+	fmt.Fprint(out, strings.TrimPrefix(strings.ReplaceAll("\n"+buf.String(), "\n  -", "\n  --"), "\n"))
+}
 
 func run() error {
 	if len(os.Args) < 2 {
@@ -54,13 +69,13 @@ func run() error {
 		fs := flag.NewFlagSet("gui", flag.ExitOnError)
 		addr := fs.String("addr", defaultGUIAddr, "address to run the local GUI server on")
 		fs.Usage = func() {
-			fmt.Fprintf(os.Stderr, "usage: %s gui [-addr host:port]\n\n"+
+			fmt.Fprintf(os.Stderr, "usage: %s gui [--addr host:port]\n\n"+
 				"Starts a local web server (bound to 127.0.0.1 on a fixed port by\n"+
 				"default, so the page's browser-local storage survives restarts)\n"+
 				"serving a GUI for all encrypt/decrypt/view operations, and opens it\n"+
 				"in your default browser. The password is entered in the GUI itself,\n"+
-				"so none of -password/-password-file/-password-env apply here.\n\noptions:\n", os.Args[0])
-			fs.PrintDefaults()
+				"so none of --password/--password-file/--password-env apply here.\n\noptions:\n", os.Args[0])
+			printFlagDefaults(fs)
 		}
 		fs.Parse(os.Args[2:])
 		return runGUI(*addr)
@@ -82,7 +97,7 @@ func run() error {
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, commandUsage[command], os.Args[0])
 		fmt.Fprint(os.Stderr, passwordSourceHelp)
-		fs.PrintDefaults()
+		printFlagDefaults(fs)
 	}
 	fs.Parse(os.Args[2:])
 
@@ -93,7 +108,7 @@ func run() error {
 
 	if command == "view" {
 		if *file == "" || *inline != "" {
-			fmt.Fprintln(os.Stderr, "error: view requires -file and does not accept -inline")
+			fmt.Fprintln(os.Stderr, "error: view requires --file and does not accept --inline")
 			fs.Usage()
 			os.Exit(2)
 		}
@@ -101,7 +116,7 @@ func run() error {
 	}
 
 	if (*file == "") == (*inline == "") {
-		fmt.Fprintln(os.Stderr, "error: specify exactly one of -file or -inline")
+		fmt.Fprintln(os.Stderr, "error: specify exactly one of --file or --inline")
 		fs.Usage()
 		os.Exit(2)
 	}
@@ -114,10 +129,10 @@ func run() error {
 }
 
 func printTopUsage() {
-	fmt.Fprintf(os.Stderr, "usage: %s (encrypt|decrypt|view) -file <file> [options]\n"+
-		"       %s (encrypt|decrypt) -inline <secret> [options]\n"+
-		"       %s gui [-addr host:port]\n\n"+
-		"run with no arguments to start the GUI (same as 'gui' with no -addr).\n"+
+	fmt.Fprintf(os.Stderr, "usage: %s (encrypt|decrypt|view) --file <file> [options]\n"+
+		"       %s (encrypt|decrypt) --inline <secret> [options]\n"+
+		"       %s gui [--addr host:port]\n\n"+
+		"run with no arguments to start the GUI (same as 'gui' with no --addr).\n"+
 		"run '%s <command> -h' for command-specific help\n", os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 

@@ -54,23 +54,25 @@ the repo (`dist/` is gitignored); build from source or grab them from CI.
 ## Usage
 
 ```
-usage: ansible-vault (encrypt|decrypt|view) -file <file> [options]
-       ansible-vault (encrypt|decrypt) -inline <secret> [options]
-       ansible-vault gui [-addr host:port]
+usage: ansible-vault (encrypt|decrypt|view) --file <file> [options]
+       ansible-vault (encrypt|decrypt) --inline <secret> [options]
+       ansible-vault gui [--addr host:port]
 ```
 
 Every invocation starts with a command — `encrypt`, `decrypt`, `view`, or
-`gui` — followed by either `-file <path>` or (for `encrypt`/`decrypt`)
-`-inline <secret>`, plus any password options.
+`gui` — followed by either `--file <path>` or (for `encrypt`/`decrypt`)
+`--inline <secret>`, plus any password options. All flags are long-form
+and accept either `--flag value` or `--flag=value`; a single leading
+dash (`-flag`) also still works, for anyone used to that style.
 
-- `encrypt -file` / `decrypt -file` always overwrite `<file>` in place,
+- `encrypt --file` / `decrypt --file` always overwrite `<file>` in place,
   keeping its name and file permissions.
-- `view -file` always leaves `<file>` untouched and prints the decrypted
-  content to stdout. `view` does not accept `-inline`.
-- `encrypt -inline` / `decrypt -inline` take the secret directly as an
+- `view --file` always leaves `<file>` untouched and prints the decrypted
+  content to stdout. `view` does not accept `--inline`.
+- `encrypt --inline` / `decrypt --inline` take the secret directly as an
   argument and always print the result to stdout.
 - Running `ansible-vault` with **no arguments** starts the GUI (same as
-  `gui` with no `-addr`) — handy for a desktop shortcut/launcher.
+  `gui` with no `--addr`) — handy for a desktop shortcut/launcher.
 
 Run `ansible-vault -h` for this summary, or `ansible-vault <command> -h`
 for command-specific help.
@@ -79,13 +81,13 @@ for command-specific help.
 
 ```sh
 # Encrypt a file in place
-ansible-vault encrypt -file secrets.yml
+ansible-vault encrypt --file secrets.yml
 
 # Decrypt a file in place
-ansible-vault decrypt -file secrets.yml
+ansible-vault decrypt --file secrets.yml
 
 # View decrypted content without modifying the file
-ansible-vault view -file secrets.yml
+ansible-vault view --file secrets.yml
 ```
 
 ### Inline secrets
@@ -99,20 +101,20 @@ db_password: !vault |
     663834396532363364626265666530...
 ```
 
-`encrypt -inline` generates that block; `decrypt -inline` reads it back:
+`encrypt --inline` generates that block; `decrypt --inline` reads it back:
 
 ```sh
 # name=secret produces "name: !vault |"
-ansible-vault encrypt -inline "db_password=hunter2"
+ansible-vault encrypt --inline "db_password=hunter2"
 
 # just "secret" (no name=) produces a bare "!vault |" block
-ansible-vault encrypt -inline "hunter2"
+ansible-vault encrypt --inline "hunter2"
 
-# decrypt -inline finds the $ANSIBLE_VAULT header wherever it appears,
+# decrypt --inline finds the $ANSIBLE_VAULT header wherever it appears,
 # so you can paste the block as-is — with its "name:" prefix, at whatever
 # indentation the source file used, or even with the header line itself
 # stripped off
-ansible-vault decrypt -inline "db_password: !vault |
+ansible-vault decrypt --inline "db_password: !vault |
     \$ANSIBLE_VAULT;1.1;AES256
     663834396532363364626265666530..."
 ```
@@ -131,15 +133,15 @@ listens on loopback, every request must carry a random per-session token
 embedded in the page, and no file path or secret is ever sent anywhere
 but to your own machine's `localhost`. Each form has a single password
 field plus a "Password" / "Password file" / "Environment variable" radio
-choice next to it, mirroring the CLI's `-password` / `-password-file` /
-`-password-env`; leaving it blank falls back to `ANSIBLE_VAULT_PASSWORD`,
+choice next to it, mirroring the CLI's `--password` / `--password-file` /
+`--password-env`; leaving it blank falls back to `ANSIBLE_VAULT_PASSWORD`,
 same as the CLI.
 
 The File tab has an Encrypt/Decrypt radio and a "just show the decrypted
 content, don't overwrite the file" checkbox — check it before running
 Decrypt to preview a file's content without touching it (equivalent to
 the CLI's `view`); leave it unchecked and Decrypt overwrites the file in
-place, same as `decrypt -file`. Encrypt always overwrites.
+place, same as `decrypt --file`. Encrypt always overwrites.
 
 The Inline tab's Encrypt mode has a "wrap encrypted output at 80
 characters per line" checkbox (checked by default) — uncheck it to get
@@ -176,7 +178,7 @@ forgotten on the next run if the port changed every time. This does mean
 passwords sit in plaintext in that browser profile's local storage
 indefinitely — fine for a personal machine, worth keeping in mind on a
 shared one. Only one GUI instance can use a given port at a time; run a
-second one with `-addr 127.0.0.1:<other-port>` (its browser storage, and
+second one with `--addr 127.0.0.1:<other-port>` (its browser storage, and
 therefore its remembered settings, will be separate from the default
 instance's).
 
@@ -186,17 +188,17 @@ Stop the GUI with Ctrl+C in the terminal it's running in.
 
 Checked in this order:
 
-1. `-password <value>` — given directly (insecure: visible in shell
+1. `--password <value>` — given directly (insecure: visible in shell
    history and process list)
-2. `-password-file <path>` — read from a file
-3. `-password-env <VAR>` — read from the named environment variable
+2. `--password-file <path>` — read from a file
+3. `--password-env <VAR>` — read from the named environment variable
 4. the `ANSIBLE_VAULT_PASSWORD` environment variable, if set
 5. an interactive, hidden-input prompt (asked twice and confirmed when
    encrypting)
 
 ```sh
-ansible-vault decrypt -file secrets.yml -password-file ~/.vault_pass
-ANSIBLE_VAULT_PASSWORD=hunter2 ansible-vault view -file secrets.yml
+ansible-vault decrypt --file secrets.yml --password-file ~/.vault_pass
+ANSIBLE_VAULT_PASSWORD=hunter2 ansible-vault view --file secrets.yml
 ```
 
 ## Notes
@@ -205,7 +207,7 @@ ANSIBLE_VAULT_PASSWORD=hunter2 ansible-vault view -file secrets.yml
   the default and by far the most common Ansible Vault format.
 - Wrong-password and corrupted-file cases are both caught by the HMAC
   check before any plaintext is produced.
-- `encrypt -file` (CLI and GUI) refuses to run if the file already looks
+- `encrypt --file` (CLI and GUI) refuses to run if the file already looks
   encrypted (starts with an `$ANSIBLE_VAULT;` header), so it never
   double-encrypts a file by mistake — decrypt it first if you actually
   want to re-encrypt it (e.g. with a new password).
