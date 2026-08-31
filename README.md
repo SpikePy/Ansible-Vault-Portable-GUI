@@ -5,8 +5,8 @@
 A minimal, dependency-light local GUI for encrypting and decrypting
 [Ansible Vault](https://docs.ansible.com/ansible/latest/vault_guide/index.html)
 files and inline `!vault` secrets — written in Go, with no dependency on
-Python or `ansible-core`. Ships as a single static binary for Linux and
-Windows: `ansible-vault-gui`.
+Python or `ansible-core`. Ships as a single static binary for Linux,
+Windows, and macOS: `ansible-vault-gui`.
 
 Implements the standard **AES256** vault cipher (format `1.1`/`1.2`):
 PBKDF2-HMAC-SHA256 key derivation, AES-256-CTR encryption, and an
@@ -27,7 +27,7 @@ HMAC-SHA256 integrity check — the same scheme `ansible-vault` itself uses.
 - Password via the form, a file, an environment variable, or the standard
   `ANSIBLE_VAULT_PASSWORD` environment variable
 - No runtime dependencies — a single static binary
-- Cross-compiles cleanly for Linux and Windows
+- Cross-compiles cleanly for Linux, Windows, and macOS
 
 ## Installation
 
@@ -48,16 +48,36 @@ marks the binary as a GUI-subsystem app, so Windows never allocates a
 console for it, not even briefly).
 
 ```sh
-GOOS=linux   GOARCH=amd64 go build -ldflags="-s -w" -o dist/ansible-vault-gui .
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -H=windowsgui" -o dist/ansible-vault-gui.exe .
+GOOS=linux   GOARCH=amd64   go build -ldflags="-s -w" -o dist/ansible-vault-gui .
+GOOS=windows GOARCH=amd64   go build -ldflags="-s -w -H=windowsgui" -o dist/ansible-vault-gui.exe .
+GOOS=darwin  GOARCH=amd64   go build -ldflags="-s -w" -o dist/ansible-vault-gui-macos-amd64 .
+GOOS=darwin  GOARCH=arm64   go build -ldflags="-s -w" -o dist/ansible-vault-gui-macos-arm64 .
 ```
 
 ### CI
 
-`.gitlab-ci.yml` cross-compiles both binaries on every push and publishes
-them as pipeline job artifacts (30-day expiry) — download them from the
-pipeline's **Job artifacts** panel. Compiled binaries aren't committed to
-the repo (`dist/` is gitignored); build from source or grab them from CI.
+`.gitlab-ci.yml` runs `go vet`/`go test`, then cross-compiles all four
+binaries (Linux, Windows, macOS Intel, macOS Apple Silicon) on every push
+and publishes them as pipeline job artifacts (30-day expiry) — download
+them from the pipeline's **Job artifacts** panel. Compiled binaries
+aren't committed to the repo (`dist/` is gitignored); build from source
+or grab them from CI.
+
+`.github/workflows/release.yml` automates actual releases: pushing a tag
+matching `v*` (e.g. `v4.1.0`) runs the same vet/test/cross-compile steps,
+then creates a GitHub Release for that tag with all four binaries
+attached and auto-generated release notes — no manual `gh release
+create` needed anymore.
+
+### Tests
+
+```sh
+go test ./...
+```
+
+Covers the vault crypto/parsing logic (`vault_test.go`), the atomic
+file-write helper (`atomicwrite_test.go`), and the HTTP API handlers
+(`server_test.go`).
 
 ## Usage
 
@@ -77,11 +97,14 @@ no file path or secret is ever sent anywhere but to your own machine's
 "Password file" / "Environment variable" radio choice next to it; leaving
 it blank falls back to the `ANSIBLE_VAULT_PASSWORD` environment variable.
 
-**The server stops itself when its browser tab is closed** (or navigated
-away from, or reloaded — the page sends a shutdown request on the way
-out either way), so there's nothing to clean up manually — no window, no
-console, no background process left running. Ctrl+C also works if you're
-watching the terminal it was launched from.
+**The server stops itself when its browser tab is actually closed** (or
+navigated away from), so there's nothing to clean up manually — no
+window, no console, no background process left running. A reload
+(F5/Ctrl+R) does *not* stop it — the page briefly asks the server to shut
+down on the way out, same as a real close, but then cancels that request
+as soon as it comes back up in the same tab, so refreshing the page is
+safe. Ctrl+C also works if you're watching the terminal it was launched
+from.
 
 Only one instance can use a given port at a time; run a second one with
 `ansible-vault-gui -addr 127.0.0.1:<other-port>` (its browser storage,
@@ -90,14 +113,13 @@ instance's).
 
 ### File tab
 
-Has an Encrypt/Decrypt radio and a "just show the decrypted content,
-don't overwrite the file" checkbox — check it before running Decrypt to
-preview a file's content without touching it; leave it unchecked and
-Decrypt overwrites the file in place. Encrypt always overwrites, and
-refuses to run if the file already looks encrypted (starts with an
-`$ANSIBLE_VAULT;` header), so it never double-encrypts a file by mistake
-— decrypt it first if you actually want to re-encrypt it (e.g. with a new
-password).
+Has an Encrypt/Decrypt radio and an "Enable file overwrite" checkbox,
+**unchecked by default** — Decrypt previews the file's content without
+touching it unless you check the box, which then makes Decrypt overwrite
+the file in place instead. Encrypt always overwrites, and refuses to run
+if the file already looks encrypted (starts with an `$ANSIBLE_VAULT;`
+header), so it never double-encrypts a file by mistake — decrypt it first
+if you actually want to re-encrypt it (e.g. with a new password).
 
 Also works on a file that *isn't* fully vault-encrypted but contains one
 or more inline `name: !vault |` secrets (see "Inline secrets" below) —
@@ -105,9 +127,16 @@ each one found gets decrypted for display (as `name: <value>`), everything
 else in the file is shown unchanged, and the file itself is never
 modified. If a decrypt fails (wrong password), the whole preview fails
 rather than showing a partially-decrypted result. The checkbox is
-automatically checked and locked whenever the loaded file looks like
+automatically forced off and locked whenever the loaded file looks like
 this — such a file can only ever be previewed, never
 decrypted-and-overwritten in place.
+
+When Encrypt is selected and the password source is set to "Password", a
+**🎲 Generate** button appears next to the password field — click it for a
+random 24-character password (drawn from `crypto.getRandomValues`,
+excluding visually-ambiguous characters like `0`/`O` and `1`/`l`/`I`). It
+fills the field and reveals it so you can see and copy what was generated.
+The same button is available on the Inline tab's password field.
 
 As you type or pick a file path, the tab shows that file's current raw
 content (up to 64 KiB) in a read-only box below the path field, so you
@@ -179,3 +208,7 @@ shared one.
   the default and by far the most common Ansible Vault format.
 - Wrong-password and corrupted-file cases are both caught by the HMAC
   check before any plaintext is produced.
+- File writes are atomic: the new content is written to a temp file in the
+  same directory and renamed into place, so a crash or a full disk mid-write
+  can't leave a truncated or corrupted file behind — the original either
+  stays fully intact or is fully replaced, never partially.

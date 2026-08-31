@@ -44,7 +44,7 @@
   .password-options .row:first-of-type { margin-top:0; }
   .password-row { display:flex; gap:.5rem; }
   .password-row input { flex:1; }
-  .toggle-pw-btn { white-space:nowrap; background:var(--panel); color:var(--fg); border:1px solid var(--border); }
+  .toggle-pw-btn, .gen-pw-btn { white-space:nowrap; background:var(--panel); color:var(--fg); border:1px solid var(--border); }
   button { background:var(--accent); color:var(--accent-fg); border:none; padding:.6rem 1.2rem; border-radius:8px; font-size:.9rem; cursor:pointer; }
   button:disabled { opacity:.6; cursor:default; }
   .status { margin-top:1rem; padding:.75rem 1rem; border-radius:8px; font-size:.85rem; white-space:pre-wrap; word-break:break-word; }
@@ -82,7 +82,7 @@
 </head>
 <body>
 <header>
-  <h1>Ansible-Vault</h1>
+  <h1>Ansible-Vault GUI</h1>
   <p>Local GUI — everything runs on this machine; nothing is sent anywhere else.</p>
 </header>
 <main>
@@ -103,7 +103,7 @@
           <input type="text" id="file-path" placeholder="/path/to/secrets.yml" autocomplete="off">
           <button type="button" class="browse-btn" data-browse-target="file-path">Browse…</button>
         </div>
-        <p class="hint">encrypt always overwrites this file in place; decrypt does too, unless the checkbox below is checked. That checkbox also works on a file that isn't fully encrypted but has one or more inline "!vault" secrets in it — those get decrypted for display, everything else is shown as-is.</p>
+        <p class="hint">encrypt always overwrites this file in place. decrypt only previews it by default — check the box below to actually overwrite it. Previewing also works on a file that isn't fully encrypted but has one or more inline "!vault" secrets in it — those get decrypted for display, everything else is shown as-is.</p>
       </div>
 
       <div class="result-box" id="file-preview" hidden>
@@ -122,14 +122,15 @@
           <div class="password-row">
             <input type="password" id="file-password-value" autocomplete="new-password">
             <button type="button" class="toggle-pw-btn" data-target="file-password-value" aria-label="Show password">👁</button>
+            <button type="button" class="gen-pw-btn" data-target="file-password-value" hidden>🎲 Generate</button>
             <button type="button" class="browse-btn" data-browse-target="file-password-value" hidden>Browse…</button>
           </div>
         </div>
       </div>
 
-      <div class="row" id="file-preview-only-row">
-        <label class="checkbox-label"><input type="checkbox" id="file-preview-only"> Just show the decrypted content, don't overwrite the file</label>
-        <p class="hint" id="file-preview-only-forced-hint" hidden>this file has inline "!vault" secrets rather than being fully encrypted, so it can only be previewed, not decrypted-and-overwritten.</p>
+      <div class="row" id="file-overwrite-row">
+        <label class="checkbox-label" id="file-overwrite-label"><input type="checkbox" id="file-overwrite"> Enable file overwrite</label>
+        <p class="hint" id="file-overwrite-forced-hint" hidden>⚠️ this file has inline "!vault" secrets rather than being fully encrypted, so it can only be previewed — overwriting isn't available.</p>
       </div>
 
       <button type="submit">Run</button>
@@ -178,6 +179,7 @@
           <div class="password-row">
             <input type="password" id="inline-password-value" autocomplete="new-password">
             <button type="button" class="toggle-pw-btn" data-target="inline-password-value" aria-label="Show password">👁</button>
+            <button type="button" class="gen-pw-btn" data-target="inline-password-value" hidden>🎲 Generate</button>
             <button type="button" class="browse-btn" data-browse-target="inline-password-value" hidden>Browse…</button>
           </div>
         </div>
@@ -197,7 +199,7 @@
     </form>
   </section>
 
-  <footer>ansible-vault · AES256 vault format 1.1/1.2 · <a href="https://github.com/SpikePy/Ansible-Vault" target="_blank" rel="noopener noreferrer">GitHub</a></footer>
+  <footer>Ansible-Vault GUI · AES256 vault format 1.1/1.2 · <a href="https://github.com/SpikePy/Ansible-Vault-GUI" target="_blank" rel="noopener noreferrer">GitHub</a></footer>
 </main>
 
 <dialog id="browse-dialog">
@@ -214,6 +216,24 @@
 
 <script>
 const TOKEN = "__TOKEN__";
+
+// sessionStorage survives a same-tab reload but is wiped when the tab
+// actually closes, so its presence here means this load is a reload of a
+// tab that already had the page open — tell the server to cancel the
+// shutdown its previous pagehide (see below) just scheduled. Sent twice as
+// a small safety margin against request ordering.
+(function () {
+  const FLAG = 'ansible-vault-gui:open';
+  const isReload = sessionStorage.getItem(FLAG) === '1';
+  sessionStorage.setItem(FLAG, '1');
+  if (isReload) {
+    const keepalive = function () {
+      fetch('/api/keepalive', { headers: { 'X-Vault-Token': TOKEN } }).catch(function () {});
+    };
+    keepalive();
+    setTimeout(keepalive, 400);
+  }
+})();
 
 document.querySelectorAll('.tab').forEach(function (tab) {
   tab.addEventListener('click', function () {
@@ -354,6 +374,69 @@ function passwordFieldsFromMode(formEl, modeGroupName, valueInputId) {
   };
 }
 
+// Unbiased random integer in [0, max) via rejection sampling.
+function randomInt(max) {
+  const range = 256 - (256 % max);
+  const buf = new Uint8Array(1);
+  let x;
+  do {
+    crypto.getRandomValues(buf);
+    x = buf[0];
+  } while (x >= range);
+  return x % max;
+}
+
+// Excludes visually-ambiguous characters (0/O, 1/l/I) to keep generated
+// passwords easy to read back and retype if ever needed.
+const PASSWORD_CHARSET = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*()-_=+';
+
+function generateStrongPassword(length) {
+  length = length || 24;
+  let out = '';
+  for (let i = 0; i < length; i++) {
+    out += PASSWORD_CHARSET[randomInt(PASSWORD_CHARSET.length)];
+  }
+  return out;
+}
+
+// Wires up a "🎲 Generate" button next to a password-source field: visible
+// only while in encrypt mode with the password-source set to "Password"
+// (not file/env), since generating a password only makes sense right before
+// vault-encrypting something with it. Clicking it fills the field, reveals
+// it (switching the show/hide toggle to "shown"), and dispatches an input
+// event so setupPersistence's listeners save it like any other keystroke.
+function setupGeneratePassword(formEl, actionGroupName, modeGroupName, valueInputId) {
+  const genBtn = formEl.querySelector('.gen-pw-btn[data-target="' + valueInputId + '"]');
+  const toggleBtn = formEl.querySelector('.toggle-pw-btn[data-target="' + valueInputId + '"]');
+  const input = document.getElementById(valueInputId);
+  if (!genBtn) return;
+
+  function sync() {
+    const action = formEl.querySelector('input[name="' + actionGroupName + '"]:checked').value;
+    const mode = formEl.querySelector('input[name="' + modeGroupName + '"]:checked').value;
+    genBtn.hidden = !(action === 'encrypt' && mode === 'password');
+  }
+
+  formEl.querySelectorAll('input[name="' + actionGroupName + '"]').forEach(function (r) {
+    r.addEventListener('change', sync);
+  });
+  formEl.querySelectorAll('input[name="' + modeGroupName + '"]').forEach(function (r) {
+    r.addEventListener('change', sync);
+  });
+
+  genBtn.addEventListener('click', function () {
+    input.value = generateStrongPassword();
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.type = 'text';
+    if (toggleBtn) {
+      toggleBtn.textContent = '🙈';
+      toggleBtn.setAttribute('aria-label', 'Hide password');
+    }
+  });
+
+  sync();
+}
+
 document.querySelectorAll('.toggle-pw-btn').forEach(function (btn) {
   btn.addEventListener('click', function () {
     const input = document.getElementById(btn.dataset.target);
@@ -382,30 +465,33 @@ document.querySelectorAll('.copy-btn').forEach(function (btn) {
 
 // --- File form ---
 const fileForm = document.getElementById('form-file');
-const filePreviewOnlyRow = document.getElementById('file-preview-only-row');
-function syncFilePreviewOnlyRow() {
+const fileOverwriteRow = document.getElementById('file-overwrite-row');
+function syncFileOverwriteRow() {
   const action = fileForm.querySelector('input[name=file-action]:checked').value;
-  filePreviewOnlyRow.hidden = action !== 'decrypt';
+  fileOverwriteRow.hidden = action !== 'decrypt';
 }
 fileForm.querySelectorAll('input[name=file-action]').forEach(function (r) {
-  r.addEventListener('change', syncFilePreviewOnlyRow);
+  r.addEventListener('change', syncFileOverwriteRow);
 });
 setupPersistence('ansible-vault-gui:file', fileForm,
   ['file-path', 'file-password-value'],
   ['file-action', 'file-password-mode'],
-  ['file-preview-only']);
+  ['file-overwrite']);
 setupPasswordMode(fileForm, 'file-password-mode', 'file-password-value');
-syncFilePreviewOnlyRow();
+setupGeneratePassword(fileForm, 'file-action', 'file-password-mode', 'file-password-value');
+syncFileOverwriteRow();
 
 const filePathInput = document.getElementById('file-path');
 const filePreviewBox = document.getElementById('file-preview');
 const filePreviewText = document.getElementById('file-preview-text');
-const filePreviewOnlyCheckbox = document.getElementById('file-preview-only');
-const filePreviewOnlyForcedHint = document.getElementById('file-preview-only-forced-hint');
+const fileOverwriteCheckbox = document.getElementById('file-overwrite');
+const fileOverwriteForcedHint = document.getElementById('file-overwrite-forced-hint');
+const fileOverwriteLabel = document.getElementById('file-overwrite-label');
+const fileOverwriteForcedTitle = '⚠️ this file has inline "!vault" secrets rather than being fully encrypted, so it can only be previewed — overwriting isn\'t available.';
 
 // A file with inline "!vault" secrets but no full $ANSIBLE_VAULT header
 // can only ever be previewed (decryptInlineVaults on the Go side), never
-// decrypted-and-overwritten in place — so force the checkbox on and lock
+// decrypted-and-overwritten in place — so force the checkbox off and lock
 // it whenever the currently-loaded file content looks like that.
 function isInlineOnlyVaultContent(text) {
   if (!text) return false;
@@ -413,16 +499,17 @@ function isInlineOnlyVaultContent(text) {
   return text.indexOf('!vault') !== -1;
 }
 
-function setFilePreviewOnlyForced(forced) {
-  filePreviewOnlyCheckbox.disabled = forced;
-  filePreviewOnlyForcedHint.hidden = !forced;
-  if (forced) filePreviewOnlyCheckbox.checked = true;
+function setFileOverwriteForced(forced) {
+  fileOverwriteCheckbox.disabled = forced;
+  fileOverwriteForcedHint.hidden = !forced;
+  fileOverwriteLabel.title = forced ? fileOverwriteForcedTitle : '';
+  if (forced) fileOverwriteCheckbox.checked = false;
 }
 
 async function loadFilePreview(path) {
   if (!path) {
     filePreviewBox.hidden = true;
-    setFilePreviewOnlyForced(false);
+    setFileOverwriteForced(false);
     return;
   }
   try {
@@ -432,15 +519,15 @@ async function loadFilePreview(path) {
     const data = await res.json();
     if (!data.ok) {
       filePreviewBox.hidden = true;
-      setFilePreviewOnlyForced(false);
+      setFileOverwriteForced(false);
       return;
     }
     filePreviewText.value = data.content + (data.truncated ? '\n... (truncated)' : '');
     filePreviewBox.hidden = false;
-    setFilePreviewOnlyForced(isInlineOnlyVaultContent(data.content));
+    setFileOverwriteForced(isInlineOnlyVaultContent(data.content));
   } catch (err) {
     filePreviewBox.hidden = true;
-    setFilePreviewOnlyForced(false);
+    setFileOverwriteForced(false);
   }
 }
 
@@ -467,8 +554,8 @@ fileForm.addEventListener('submit', async function (e) {
   btn.disabled = true;
   try {
     const radioAction = fileForm.querySelector('input[name=file-action]:checked').value;
-    const previewOnly = document.getElementById('file-preview-only').checked;
-    const action = (radioAction === 'decrypt' && previewOnly) ? 'view' : radioAction;
+    const overwriteEnabled = document.getElementById('file-overwrite').checked;
+    const action = (radioAction === 'decrypt' && !overwriteEnabled) ? 'view' : radioAction;
     const path = document.getElementById('file-path').value;
     const body = Object.assign({
       action: action,
@@ -510,6 +597,7 @@ setupPersistence('ansible-vault-gui:inline', inlineForm,
   ['inline-action', 'inline-password-mode'],
   ['inline-multiline']);
 setupPasswordMode(inlineForm, 'inline-password-mode', 'inline-password-value');
+setupGeneratePassword(inlineForm, 'inline-action', 'inline-password-mode', 'inline-password-value');
 syncInlineFields();
 
 inlineForm.addEventListener('submit', async function (e) {
@@ -631,8 +719,11 @@ document.getElementById('browse-cancel-btn').addEventListener('click', function 
   browseDialog.close();
 });
 
-// Stop the local server when this tab goes away (closed, navigated away
-// from, or reloaded) — there's no point leaving it running unattended.
+// Schedule stopping the local server whenever this tab goes away — there's
+// no point leaving it running unattended after a real close. This also
+// fires on a reload though, so the server only exits after a short grace
+// period (see shutdownGrace in server.go); the reload detection above
+// cancels it via /api/keepalive once the page comes back in the same tab.
 // sendBeacon is used because it's the one request type browsers reliably
 // still deliver during page teardown; it can't carry a custom header, so
 // the token goes in the query string instead of X-Vault-Token here.

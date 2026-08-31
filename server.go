@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,6 +29,11 @@ var guiHTML string
 // one instance can bind this port at a time; pass a different addr to run
 // to use more.
 const defaultAddr = "127.0.0.1:47990"
+
+// shutdownGrace is how long /api/shutdown waits before actually exiting,
+// giving a same-tab reload's incoming page enough time to call
+// /api/keepalive and cancel it.
+const shutdownGrace = 1200 * time.Millisecond
 
 // run starts the local GUI server on addr and blocks until the server
 // exits — either because the browser tab was closed (see the /api/shutdown
@@ -62,6 +68,12 @@ func run(addr string) error {
 	mux.HandleFunc("/api/inline", requireToken(token, handleInline))
 	mux.HandleFunc("/api/browse", requireToken(token, handleBrowse))
 	mux.HandleFunc("/api/preview", requireToken(token, handlePreview))
+	// A page reload also fires pagehide (see gui.html), so /api/shutdown
+	// can't exit immediately — it schedules the exit after shutdownGrace
+	// instead, giving the reloaded page time to load and call
+	// /api/keepalive, which cancels the pending exit.
+	var shutdownMu sync.Mutex
+	var shutdownTimer *time.Timer
 	mux.HandleFunc("/api/shutdown", func(w http.ResponseWriter, r *http.Request) {
 		// navigator.sendBeacon (used by the page's pagehide handler, see
 		// gui.html) can't set custom headers, so this one endpoint takes
@@ -72,11 +84,22 @@ func run(addr string) error {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
-		go func() {
-			time.Sleep(200 * time.Millisecond)
-			os.Exit(0)
-		}()
+		shutdownMu.Lock()
+		if shutdownTimer != nil {
+			shutdownTimer.Stop()
+		}
+		shutdownTimer = time.AfterFunc(shutdownGrace, func() { os.Exit(0) })
+		shutdownMu.Unlock()
 	})
+	mux.HandleFunc("/api/keepalive", requireToken(token, func(w http.ResponseWriter, r *http.Request) {
+		shutdownMu.Lock()
+		if shutdownTimer != nil {
+			shutdownTimer.Stop()
+			shutdownTimer = nil
+		}
+		shutdownMu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
 
 	url := fmt.Sprintf("http://%s/?token=%s", listener.Addr().String(), token)
 	openBrowser(url)
@@ -172,7 +195,7 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 			writeError(w, err)
 			return
 		}
-		if err := os.WriteFile(req.Path, result, mode); err != nil {
+		if err := atomicWriteFile(req.Path, result, mode); err != nil {
 			writeError(w, fmt.Errorf("writing file: %w", err))
 			return
 		}
