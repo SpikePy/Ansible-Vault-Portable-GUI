@@ -1,6 +1,6 @@
-// Package guiserver implements the local, token-gated web server behind
-// "ansible-vault gui" and the standalone ansible-vault-gui binary.
-package guiserver
+package main
+
+// The local, token-gated web server behind the GUI.
 
 import (
 	"crypto/rand"
@@ -17,31 +17,25 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"ansible-vault/internal/vault"
 )
 
 //go:embed gui.html
 var guiHTML string
 
-// DefaultAddr is fixed (rather than an OS-assigned random port) so the
+// defaultAddr is fixed (rather than an OS-assigned random port) so the
 // page's origin stays the same across restarts, which is what lets the
 // browser's localStorage-based settings persistence survive a restart. Only
-// one GUI instance can bind this port at a time; pass a different addr to
-// Run to use more.
-const DefaultAddr = "127.0.0.1:47990"
+// one instance can bind this port at a time; pass a different addr to run
+// to use more.
+const defaultAddr = "127.0.0.1:47990"
 
-// Run starts the local GUI server on addr and blocks until the server
+// run starts the local GUI server on addr and blocks until the server
 // exits — either because the browser tab was closed (see the /api/shutdown
-// handler) or the process is killed. onReady, if non-nil, is called once
-// with the page's URL (including the session token) after the server
-// starts listening but before it opens the browser, so the caller can
-// report status however it likes (print to a terminal, or nothing at all
-// for a silent, windowless launch).
-func Run(addr string, onReady func(url string)) error {
+// handler) or the process is killed.
+func run(addr string) error {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("starting GUI server: %w", err)
+		return fmt.Errorf("starting server: %w", err)
 	}
 
 	tokenBytes := make([]byte, 16)
@@ -85,17 +79,14 @@ func Run(addr string, onReady func(url string)) error {
 	})
 
 	url := fmt.Sprintf("http://%s/?token=%s", listener.Addr().String(), token)
-	if onReady != nil {
-		onReady(url)
-	}
 	openBrowser(url)
 
 	return http.Serve(listener, mux)
 }
 
 // requireToken protects the API endpoints from other local processes /
-// browser tabs guessing at the port: the GUI page embeds the token and
-// sends it on every request.
+// browser tabs guessing at the port: the page embeds the token and sends
+// it on every request.
 func requireToken(token string, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Vault-Token") != token {
@@ -157,14 +148,14 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, fmt.Errorf("reading input file: %w", err))
 		return
 	}
-	if encrypt && vault.IsVaultText(raw) {
+	if encrypt && isVaultText(raw) {
 		writeError(w, fmt.Errorf("%s is already encrypted; decrypt it first if you want to re-encrypt it", req.Path))
 		return
 	}
 
 	switch req.Action {
 	case "view":
-		plaintext, err := vault.ViewFile(raw, pw)
+		plaintext, err := viewFile(raw, pw)
 		if err != nil {
 			writeError(w, err)
 			return
@@ -173,9 +164,9 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 	case "encrypt", "decrypt":
 		var result []byte
 		if encrypt {
-			result, err = vault.EncryptVault(raw, pw, true)
+			result, err = encryptVault(raw, pw, true)
 		} else {
-			result, err = vault.DecryptVault(raw, pw)
+			result, err = decryptVault(raw, pw)
 		}
 		if err != nil {
 			writeError(w, err)
@@ -224,12 +215,12 @@ func handleInline(w http.ResponseWriter, r *http.Request) {
 			writeError(w, errors.New("secret is required"))
 			return
 		}
-		vaultText, err := vault.EncryptVault([]byte(req.Secret), pw, req.Multiline)
+		vaultText, err := encryptVault([]byte(req.Secret), pw, req.Multiline)
 		if err != nil {
 			writeError(w, err)
 			return
 		}
-		writeJSON(w, apiResponse{OK: true, Result: string(vault.FormatInlineVault(vaultText, req.Name))})
+		writeJSON(w, apiResponse{OK: true, Result: string(formatInlineVault(vaultText, req.Name))})
 		return
 	}
 
@@ -237,7 +228,7 @@ func handleInline(w http.ResponseWriter, r *http.Request) {
 		writeError(w, errors.New("vault text is required"))
 		return
 	}
-	plaintext, err := vault.DecryptVault([]byte(req.VaultText), pw)
+	plaintext, err := decryptVault([]byte(req.VaultText), pw)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -372,11 +363,10 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, previewResponse{OK: true, Content: string(buf[:n]), Truncated: truncated})
 }
 
-// resolveGUIPassword is vault.ResolvePassword without the CLI's
-// interactive-prompt fallback (the GUI has no terminal to prompt on) —
-// instead it errors out asking the user to fill in a password field.
+// resolveGUIPassword is resolvePassword, turning "not found" into an error
+// since the GUI has no terminal to fall back to prompting on.
 func resolveGUIPassword(password, passwordFile, passwordEnv string) ([]byte, error) {
-	pw, ok, err := vault.ResolvePassword(password, passwordFile, passwordEnv)
+	pw, ok, err := resolvePassword(password, passwordFile, passwordEnv)
 	if err != nil {
 		return nil, err
 	}

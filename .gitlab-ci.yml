@@ -6,12 +6,10 @@ build:
   image: golang:1.23
   script:
     - go vet ./...
-    - GOOS=linux   GOARCH=amd64 go build -ldflags="-s -w" -o dist/ansible-vault ./cmd/ansible-vault
-    - GOOS=linux   GOARCH=amd64 go build -ldflags="-s -w" -o dist/ansible-vault-gui ./cmd/ansible-vault-gui
-    - GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/ansible-vault.exe ./cmd/ansible-vault
-    - GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -H=windowsgui" -o dist/ansible-vault-gui.exe ./cmd/ansible-vault-gui
+    - GOOS=linux   GOARCH=amd64 go build -ldflags="-s -w" -o dist/ansible-vault-gui .
+    - GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -H=windowsgui" -o dist/ansible-vault-gui.exe .
   artifacts:
-    name: "ansible-vault-$CI_COMMIT_SHORT_SHA"
+    name: "ansible-vault-gui-$CI_COMMIT_SHORT_SHA"
     paths:
       - dist/
     expire_in: 30 days

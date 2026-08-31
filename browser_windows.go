@@ -1,6 +1,6 @@
 //go:build windows
 
-package guiserver
+package main
 
 import (
 	"syscall"
