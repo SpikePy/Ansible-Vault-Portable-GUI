@@ -157,9 +157,6 @@
           <label for="inline-secret">Secret</label>
           <textarea id="inline-secret" placeholder="the value to encrypt"></textarea>
         </div>
-        <div class="row">
-          <label class="checkbox-label"><input type="checkbox" id="inline-multiline" checked> Wrap encrypted output at 80 characters per line</label>
-        </div>
       </div>
 
       <div class="row" id="inline-decrypt-fields" hidden>
@@ -182,6 +179,10 @@
             <button type="button" class="browse-btn" data-browse-target="inline-password-value" hidden>Browse…</button>
           </div>
         </div>
+      </div>
+
+      <div class="row" id="inline-multiline-row">
+        <label class="checkbox-label"><input type="checkbox" id="inline-multiline" checked> Wrap encrypted output at 80 characters per line</label>
       </div>
 
       <button type="submit">Run</button>
@@ -492,10 +493,12 @@ fileForm.addEventListener('submit', async function (e) {
 const inlineForm = document.getElementById('form-inline');
 const inlineEncryptFields = document.getElementById('inline-encrypt-fields');
 const inlineDecryptFields = document.getElementById('inline-decrypt-fields');
+const inlineMultilineRow = document.getElementById('inline-multiline-row');
 function syncInlineFields() {
   const action = inlineForm.querySelector('input[name=inline-action]:checked').value;
   inlineEncryptFields.hidden = action !== 'encrypt';
   inlineDecryptFields.hidden = action !== 'decrypt';
+  inlineMultilineRow.hidden = action !== 'encrypt';
 }
 inlineForm.querySelectorAll('input[name=inline-action]').forEach(function (r) {
   r.addEventListener('change', syncInlineFields);
