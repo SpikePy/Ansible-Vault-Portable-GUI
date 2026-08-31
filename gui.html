@@ -95,16 +95,13 @@
         <label><input type="radio" name="file-action" value="encrypt" checked> Encrypt</label>
         <label><input type="radio" name="file-action" value="decrypt"> Decrypt</label>
       </div>
-      <div class="row" id="file-preview-only-row">
-        <label class="checkbox-label"><input type="checkbox" id="file-preview-only"> Just show the decrypted content, don't overwrite the file</label>
-      </div>
       <div class="row">
         <label for="file-path">File path</label>
         <div class="path-row">
           <input type="text" id="file-path" placeholder="/path/to/secrets.yml" autocomplete="off">
           <button type="button" class="browse-btn" data-browse-target="file-path">Browse…</button>
         </div>
-        <p class="hint">encrypt always overwrites this file in place; decrypt does too, unless the checkbox above is checked. That checkbox also works on a file that isn't fully encrypted but has one or more inline "!vault" secrets in it — those get decrypted for display, everything else is shown as-is.</p>
+        <p class="hint">encrypt always overwrites this file in place; decrypt does too, unless the checkbox below is checked. That checkbox also works on a file that isn't fully encrypted but has one or more inline "!vault" secrets in it — those get decrypted for display, everything else is shown as-is.</p>
       </div>
 
       <div class="result-box" id="file-preview" hidden>
@@ -126,6 +123,11 @@
             <button type="button" class="browse-btn" data-browse-target="file-password-value" hidden>Browse…</button>
           </div>
         </div>
+      </div>
+
+      <div class="row" id="file-preview-only-row">
+        <label class="checkbox-label"><input type="checkbox" id="file-preview-only"> Just show the decrypted content, don't overwrite the file</label>
+        <p class="hint" id="file-preview-only-forced-hint" hidden>this file has inline "!vault" secrets rather than being fully encrypted, so it can only be previewed, not decrypted-and-overwritten.</p>
       </div>
 
       <button type="submit">Run</button>
@@ -395,10 +397,29 @@ syncFilePreviewOnlyRow();
 const filePathInput = document.getElementById('file-path');
 const filePreviewBox = document.getElementById('file-preview');
 const filePreviewText = document.getElementById('file-preview-text');
+const filePreviewOnlyCheckbox = document.getElementById('file-preview-only');
+const filePreviewOnlyForcedHint = document.getElementById('file-preview-only-forced-hint');
+
+// A file with inline "!vault" secrets but no full $ANSIBLE_VAULT header
+// can only ever be previewed (decryptInlineVaults on the Go side), never
+// decrypted-and-overwritten in place — so force the checkbox on and lock
+// it whenever the currently-loaded file content looks like that.
+function isInlineOnlyVaultContent(text) {
+  if (!text) return false;
+  if (text.replace(/^\s+/, '').startsWith('$ANSIBLE_VAULT;')) return false;
+  return text.indexOf('!vault') !== -1;
+}
+
+function setFilePreviewOnlyForced(forced) {
+  filePreviewOnlyCheckbox.disabled = forced;
+  filePreviewOnlyForcedHint.hidden = !forced;
+  if (forced) filePreviewOnlyCheckbox.checked = true;
+}
 
 async function loadFilePreview(path) {
   if (!path) {
     filePreviewBox.hidden = true;
+    setFilePreviewOnlyForced(false);
     return;
   }
   try {
@@ -408,12 +429,15 @@ async function loadFilePreview(path) {
     const data = await res.json();
     if (!data.ok) {
       filePreviewBox.hidden = true;
+      setFilePreviewOnlyForced(false);
       return;
     }
     filePreviewText.value = data.content + (data.truncated ? '\n... (truncated)' : '');
     filePreviewBox.hidden = false;
+    setFilePreviewOnlyForced(isInlineOnlyVaultContent(data.content));
   } catch (err) {
     filePreviewBox.hidden = true;
+    setFilePreviewOnlyForced(false);
   }
 }
 

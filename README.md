@@ -166,7 +166,10 @@ secrets (the format from the "Inline secrets" section above) — each one
 found gets decrypted for display (as `name: <value>`), everything else
 in the file is shown unchanged, and the file itself is never modified.
 If a decrypt fails (wrong password), the whole preview fails rather than
-showing a partially-decrypted result.
+showing a partially-decrypted result. In the GUI, the checkbox is
+automatically checked and locked whenever the loaded file looks like
+this — such a file can only ever be previewed, never decrypted-and-
+overwritten in place.
 
 The Inline tab's Encrypt mode has a "wrap encrypted output at 80
 characters per line" checkbox (checked by default) — uncheck it to get
