@@ -102,6 +102,11 @@ ansible-vault decrypt --file secrets.yml
 ansible-vault view --file secrets.yml
 ```
 
+`view` also works on a file that isn't fully vault-encrypted, as long as
+it has one or more inline `!vault` secrets in it (see below) — each one
+is decrypted for display, the rest of the file is shown as-is, and
+nothing is written back to disk.
+
 ### Inline secrets
 
 Ansible supports vault-encrypting a single variable inside an otherwise
@@ -154,6 +159,14 @@ content, don't overwrite the file" checkbox — check it before running
 Decrypt to preview a file's content without touching it (equivalent to
 the CLI's `view`); leave it unchecked and Decrypt overwrites the file in
 place, same as `decrypt --file`. Encrypt always overwrites.
+
+`view --file`/the preview checkbox both also work on a file that *isn't*
+fully vault-encrypted but contains one or more inline `name: !vault |`
+secrets (the format from the "Inline secrets" section above) — each one
+found gets decrypted for display (as `name: <value>`), everything else
+in the file is shown unchanged, and the file itself is never modified.
+If a decrypt fails (wrong password), the whole preview fails rather than
+showing a partially-decrypted result.
 
 The Inline tab's Encrypt mode has a "wrap encrypted output at 80
 characters per line" checkbox (checked by default) — uncheck it to get

@@ -104,7 +104,7 @@
           <input type="text" id="file-path" placeholder="/path/to/secrets.yml" autocomplete="off">
           <button type="button" class="browse-btn" data-browse-target="file-path">Browse…</button>
         </div>
-        <p class="hint">encrypt always overwrites this file in place; decrypt does too, unless the checkbox above is checked.</p>
+        <p class="hint">encrypt always overwrites this file in place; decrypt does too, unless the checkbox above is checked. That checkbox also works on a file that isn't fully encrypted but has one or more inline "!vault" secrets in it — those get decrypted for display, everything else is shown as-is.</p>
       </div>
 
       <div class="result-box" id="file-preview" hidden>

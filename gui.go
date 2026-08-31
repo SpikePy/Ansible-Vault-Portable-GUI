@@ -138,7 +138,7 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 
 	switch req.Action {
 	case "view":
-		plaintext, err := decryptVault(raw, pw)
+		plaintext, err := viewFile(raw, pw)
 		if err != nil {
 			writeError(w, err)
 			return

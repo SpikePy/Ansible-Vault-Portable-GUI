@@ -32,7 +32,14 @@ func decryptVault(raw []byte, password []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return decryptVaultParts(salt, expectedHMAC, ciphertext, password)
+}
 
+// decryptVaultParts is decryptVault's core, taking the already-parsed salt,
+// HMAC and ciphertext directly. Split out so decryptInlineVaults can decrypt
+// several separately-parsed blocks within one larger file without having to
+// glue each one back into a full vault-text string first.
+func decryptVaultParts(salt, expectedHMAC, ciphertext, password []byte) ([]byte, error) {
 	derived := pbkdf2.Key(password, salt, pbkdf2Iterations, 2*keyLength+ivLength, sha256.New)
 	aesKey := derived[:keyLength]
 	hmacKey := derived[keyLength : 2*keyLength]
@@ -56,6 +63,100 @@ func decryptVault(raw []byte, password []byte) ([]byte, error) {
 	cipher.NewCTR(block, iv).XORKeyStream(padded, ciphertext)
 
 	return unpad(padded)
+}
+
+// viewFile decrypts raw for a non-destructive preview: if the whole file is
+// a standard vault (starts with the $ANSIBLE_VAULT header), it's decrypted
+// as usual. Otherwise, raw is scanned for one or more inline "name: !vault
+// |" blocks (the format for a single vault-encrypted variable embedded in
+// an otherwise plaintext file) and each one found is replaced by its
+// decrypted plaintext value, leaving the rest of the file untouched.
+func viewFile(raw []byte, password []byte) ([]byte, error) {
+	firstNonBlank := ""
+	for _, line := range strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			firstNonBlank = t
+			break
+		}
+	}
+	if strings.HasPrefix(firstNonBlank, vaultHeaderPrefix) {
+		return decryptVault(raw, password)
+	}
+
+	out, count, err := decryptInlineVaults(raw, password)
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return nil, errors.New("no vault content found: not a full vault file, and no inline \"!vault\" blocks were found")
+	}
+	return out, nil
+}
+
+// decryptInlineVaults scans raw for inline "!vault |" YAML blocks (a line
+// containing "!vault" followed by an indented $ANSIBLE_VAULT envelope) and
+// returns raw with each one replaced by its decrypted plaintext value,
+// preserving whatever preceded "!vault" on that line (typically "key: ").
+// count is how many blocks were found and decrypted; everything else in
+// raw is passed through unchanged. A block that merely looks like one
+// (e.g. the tag appears without a valid envelope following it) is left as
+// found. A genuine decrypt failure (wrong password, bad HMAC) aborts and
+// returns that error rather than silently skipping the block.
+func decryptInlineVaults(raw []byte, password []byte) ([]byte, int, error) {
+	lines := strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n")
+	var out []string
+	count := 0
+
+	for i := 0; i < len(lines); {
+		line := lines[i]
+		if !strings.Contains(line, "!vault") {
+			out = append(out, line)
+			i++
+			continue
+		}
+
+		j := i + 1
+		for j < len(lines) && strings.TrimSpace(lines[j]) == "" {
+			j++
+		}
+		if j >= len(lines) || !strings.HasPrefix(strings.TrimSpace(lines[j]), vaultHeaderPrefix) {
+			out = append(out, line)
+			i++
+			continue
+		}
+
+		k := j + 1
+		for k < len(lines) && isHexString(strings.TrimSpace(lines[k])) {
+			k++
+		}
+		if k == j+1 {
+			out = append(out, line)
+			i++
+			continue
+		}
+
+		blockText := strings.TrimSpace(lines[j]) + "\n" + strings.Join(lines[j+1:k], "\n") + "\n"
+		salt, expectedHMAC, ciphertext, perr := parseVaultText([]byte(blockText))
+		if perr != nil {
+			out = append(out, line)
+			i++
+			continue
+		}
+		plaintext, derr := decryptVaultParts(salt, expectedHMAC, ciphertext, password)
+		if derr != nil {
+			return nil, count, derr
+		}
+
+		prefix := strings.TrimRight(line[:strings.Index(line, "!vault")], " \t")
+		if prefix != "" {
+			prefix += " "
+		}
+		out = append(out, prefix+string(plaintext))
+		count++
+		i = k
+	}
+
+	return []byte(strings.Join(out, "\n")), count, nil
 }
 
 // encryptVault encrypts plaintext into the standard vault text format. When

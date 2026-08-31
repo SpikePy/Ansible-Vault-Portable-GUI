@@ -199,7 +199,9 @@ func runFile(path string, encrypt bool, password, passwordFile, passwordEnv stri
 	return os.WriteFile(path, result, mode)
 }
 
-// runView decrypts path and prints it to stdout without modifying it.
+// runView decrypts path and prints it to stdout without modifying it. path
+// can be a full vault file, or a plain file containing one or more inline
+// "!vault" blocks (see viewFile).
 func runView(path, password, passwordFile, passwordEnv string) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -211,7 +213,7 @@ func runView(path, password, passwordFile, passwordEnv string) error {
 		return err
 	}
 
-	plaintext, err := decryptVault(raw, pw)
+	plaintext, err := viewFile(raw, pw)
 	if err != nil {
 		return err
 	}
