@@ -69,8 +69,11 @@ Every invocation starts with a command — `encrypt`, `decrypt`, `view`, or
   content to stdout. `view` does not accept `-inline`.
 - `encrypt -inline` / `decrypt -inline` take the secret directly as an
   argument and always print the result to stdout.
+- Running `ansible-vault` with **no arguments** starts the GUI (same as
+  `gui` with no `-addr`) — handy for a desktop shortcut/launcher.
 
-Run `ansible-vault <command> -h` for command-specific help.
+Run `ansible-vault -h` for this summary, or `ansible-vault <command> -h`
+for command-specific help.
 
 ### Encrypting and decrypting a file
 

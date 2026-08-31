@@ -42,8 +42,7 @@ const passwordSourceHelp = "The vault password comes from -password, -password-f
 
 func run() error {
 	if len(os.Args) < 2 {
-		printTopUsage()
-		os.Exit(2)
+		return runGUI(defaultGUIAddr)
 	}
 	command := os.Args[1]
 	if command == "-h" || command == "-help" || command == "--help" {
@@ -118,6 +117,7 @@ func printTopUsage() {
 	fmt.Fprintf(os.Stderr, "usage: %s (encrypt|decrypt|view) -file <file> [options]\n"+
 		"       %s (encrypt|decrypt) -inline <secret> [options]\n"+
 		"       %s gui [-addr host:port]\n\n"+
+		"run with no arguments to start the GUI (same as 'gui' with no -addr).\n"+
 		"run '%s <command> -h' for command-specific help\n", os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 
