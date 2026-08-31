@@ -54,16 +54,27 @@ the repo (`dist/` is gitignored); build from source or grab them from CI.
 ## Usage
 
 ```
-usage: ansible-vault (encrypt|decrypt|view) --file <file> [options]
-       ansible-vault (encrypt|decrypt) --inline <secret> [options]
+usage: ansible-vault (encrypt|decrypt|view) --file/-f <file> [options]
+       ansible-vault (encrypt|decrypt) --inline/-i <secret> [options]
        ansible-vault gui [--addr host:port]
 ```
 
 Every invocation starts with a command — `encrypt`, `decrypt`, `view`, or
-`gui` — followed by either `--file <path>` or (for `encrypt`/`decrypt`)
-`--inline <secret>`, plus any password options. All flags are long-form
-and accept either `--flag value` or `--flag=value`; a single leading
-dash (`-flag`) also still works, for anyone used to that style.
+`gui` — followed by either `--file`/`-f <path>` or (for `encrypt`/
+`decrypt`) `--inline`/`-i <secret>`, plus any password options. Every
+option has both a long and, except `--addr`, a short form:
+
+| long             | short | meaning                              |
+|------------------|-------|---------------------------------------|
+| `--file`         | `-f`  | file to encrypt/decrypt/view          |
+| `--inline`       | `-i`  | secret / vault text, instead of a file |
+| `--password`     | `-p`  | the vault password, given directly    |
+| `--password-file`| `-F`  | read the password from a file         |
+| `--password-env` | `-e`  | read the password from an env var     |
+
+A long option accepts `--flag value` or `--flag=value`; a short option
+the same way, `-f value` or `-f=value`. A single dash also works on a
+long name (`-file`), for backward compatibility.
 
 - `encrypt --file` / `decrypt --file` always overwrite `<file>` in place,
   keeping its name and file permissions.
@@ -82,6 +93,7 @@ for command-specific help.
 ```sh
 # Encrypt a file in place
 ansible-vault encrypt --file secrets.yml
+ansible-vault encrypt -f secrets.yml           # same, short form
 
 # Decrypt a file in place
 ansible-vault decrypt --file secrets.yml

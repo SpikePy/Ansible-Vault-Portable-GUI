@@ -21,31 +21,55 @@ func main() {
 // commandUsage is printed above a subcommand's flag defaults, keyed by
 // subcommand name.
 var commandUsage = map[string]string{
-	"encrypt": "usage: %[1]s encrypt --file <file> [options]\n" +
-		"       %[1]s encrypt --inline [name=]<secret> [options]\n\n" +
-		"--file overwrites <file> in place (keeping its name and permissions).\n" +
-		"--inline encrypts the secret directly and prints an inline YAML\n" +
+	"encrypt": "usage: %[1]s encrypt --file/-f <file> [options]\n" +
+		"       %[1]s encrypt --inline/-i [name=]<secret> [options]\n\n" +
+		"--file/-f overwrites <file> in place (keeping its name and permissions).\n" +
+		"--inline/-i encrypts the secret directly and prints an inline YAML\n" +
 		"\"!vault |\" block to stdout (name= is optional; omit it for a bare block).\n\n",
-	"decrypt": "usage: %[1]s decrypt --file <file> [options]\n" +
-		"       %[1]s decrypt --inline <vault-text> [options]\n\n" +
-		"--file overwrites <file> in place (keeping its name and permissions).\n" +
-		"--inline decrypts a bare vault block or an inline \"name: !vault |\" block\n" +
+	"decrypt": "usage: %[1]s decrypt --file/-f <file> [options]\n" +
+		"       %[1]s decrypt --inline/-i <vault-text> [options]\n\n" +
+		"--file/-f overwrites <file> in place (keeping its name and permissions).\n" +
+		"--inline/-i decrypts a bare vault block or an inline \"name: !vault |\" block\n" +
 		"given directly as an argument, and prints the plaintext to stdout.\n\n",
-	"view": "usage: %[1]s view --file <file> [options]\n\n" +
+	"view": "usage: %[1]s view --file/-f <file> [options]\n\n" +
 		"view always leaves <file> untouched and prints the decrypted content\n" +
 		"to stdout.\n\n",
 }
 
-const passwordSourceHelp = "The vault password comes from --password, --password-file or --password-env\n" +
-	"(checked in that order); if none of those are given, the ANSIBLE_VAULT_PASSWORD\n" +
-	"environment variable is used if set, otherwise an interactive prompt is shown.\n\n" +
-	"Options may be given as \"--flag value\" or \"--flag=value\".\n\noptions:\n"
+const passwordSourceHelp = "The vault password comes from --password/-p, --password-file/-F or\n" +
+	"--password-env/-e (checked in that order); if none of those are given,\n" +
+	"the ANSIBLE_VAULT_PASSWORD environment variable is used if set, otherwise\n" +
+	"an interactive prompt is shown.\n\n" +
+	"A long option may be given as \"--flag value\" or \"--flag=value\"; a short\n" +
+	"option the same way as \"-f value\" or \"-f=value\". A single dash also\n" +
+	"works on a long name (\"-file\"), for backward compatibility.\n\noptions:\n"
+
+// commandFlagOpts describes the --long/-short flag pairs shared by the
+// encrypt/decrypt/view subcommands, used both to register them on a
+// flag.FlagSet and to render their help text (see printCommandOptions).
+func commandFlagOpts(command string) []struct{ short, long, usage string } {
+	return []struct{ short, long, usage string }{
+		{"f", "file", "file to " + command},
+		{"i", "inline", "secret / vault text to " + command + " directly, instead of a file"},
+		{"p", "password", "vault password given directly (insecure: visible in shell history / process list); " +
+			"defaults to the ANSIBLE_VAULT_PASSWORD environment variable if not set"},
+		{"F", "password-file", "read the vault password from this file"},
+		{"e", "password-env", "read the vault password from this environment variable"},
+	}
+}
+
+func printCommandOptions(command string) {
+	for _, o := range commandFlagOpts(command) {
+		fmt.Fprintf(os.Stderr, "  -%s, --%s string\n    \t%s\n", o.short, o.long, o.usage)
+	}
+}
 
 // printFlagDefaults is flag.FlagSet.PrintDefaults, but rendered with
-// double-dash flag names ("--file" rather than "-file") to match this
-// tool's documented long-option style; the flags themselves still accept
+// double-dash flag names ("--addr" rather than "-addr") to match this
+// tool's documented long-option style; the flag itself still accepts
 // either a single or double leading dash (that's a built-in behavior of the
-// flag package, not something this changes).
+// flag package, not something this changes). Only used for flag sets with
+// no single-letter aliases (see printCommandOptions for those).
 func printFlagDefaults(fs *flag.FlagSet) {
 	var buf bytes.Buffer
 	out := fs.Output()
@@ -88,16 +112,21 @@ func run() error {
 	}
 
 	fs := flag.NewFlagSet(command, flag.ExitOnError)
-	file := fs.String("file", "", "file to "+command)
-	inline := fs.String("inline", "", "secret / vault text to "+command+" directly, instead of a file")
-	password := fs.String("password", "", "vault password given directly (insecure: visible in shell history / process list); "+
-		"defaults to the ANSIBLE_VAULT_PASSWORD environment variable if not set")
-	passwordFile := fs.String("password-file", "", "read the vault password from this file")
-	passwordEnv := fs.String("password-env", "", "read the vault password from this environment variable")
+	var file, inline, password, passwordFile, passwordEnv string
+	fs.StringVar(&file, "file", "", "")
+	fs.StringVar(&file, "f", "", "")
+	fs.StringVar(&inline, "inline", "", "")
+	fs.StringVar(&inline, "i", "", "")
+	fs.StringVar(&password, "password", "", "")
+	fs.StringVar(&password, "p", "", "")
+	fs.StringVar(&passwordFile, "password-file", "", "")
+	fs.StringVar(&passwordFile, "F", "", "")
+	fs.StringVar(&passwordEnv, "password-env", "", "")
+	fs.StringVar(&passwordEnv, "e", "", "")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, commandUsage[command], os.Args[0])
 		fmt.Fprint(os.Stderr, passwordSourceHelp)
-		printFlagDefaults(fs)
+		printCommandOptions(command)
 	}
 	fs.Parse(os.Args[2:])
 
@@ -107,30 +136,30 @@ func run() error {
 	}
 
 	if command == "view" {
-		if *file == "" || *inline != "" {
-			fmt.Fprintln(os.Stderr, "error: view requires --file and does not accept --inline")
+		if file == "" || inline != "" {
+			fmt.Fprintln(os.Stderr, "error: view requires --file/-f and does not accept --inline/-i")
 			fs.Usage()
 			os.Exit(2)
 		}
-		return runView(*file, *password, *passwordFile, *passwordEnv)
+		return runView(file, password, passwordFile, passwordEnv)
 	}
 
-	if (*file == "") == (*inline == "") {
-		fmt.Fprintln(os.Stderr, "error: specify exactly one of --file or --inline")
+	if (file == "") == (inline == "") {
+		fmt.Fprintln(os.Stderr, "error: specify exactly one of --file/-f or --inline/-i")
 		fs.Usage()
 		os.Exit(2)
 	}
 
 	encrypt := command == "encrypt"
-	if *file != "" {
-		return runFile(*file, encrypt, *password, *passwordFile, *passwordEnv)
+	if file != "" {
+		return runFile(file, encrypt, password, passwordFile, passwordEnv)
 	}
-	return runInline(*inline, encrypt, *password, *passwordFile, *passwordEnv)
+	return runInline(inline, encrypt, password, passwordFile, passwordEnv)
 }
 
 func printTopUsage() {
-	fmt.Fprintf(os.Stderr, "usage: %s (encrypt|decrypt|view) --file <file> [options]\n"+
-		"       %s (encrypt|decrypt) --inline <secret> [options]\n"+
+	fmt.Fprintf(os.Stderr, "usage: %s (encrypt|decrypt|view) --file/-f <file> [options]\n"+
+		"       %s (encrypt|decrypt) --inline/-i <secret> [options]\n"+
 		"       %s gui [--addr host:port]\n\n"+
 		"run with no arguments to start the GUI (same as 'gui' with no --addr).\n"+
 		"run '%s <command> -h' for command-specific help\n", os.Args[0], os.Args[0], os.Args[0], os.Args[0])
