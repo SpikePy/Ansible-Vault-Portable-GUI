@@ -1,4 +1,4 @@
-module ansible-vault-decrypt
+module ansible-vault
 
 go 1.21
 

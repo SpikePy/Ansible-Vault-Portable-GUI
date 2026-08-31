@@ -1,4 +1,6 @@
-package main
+// Package guiserver implements the local, token-gated web server behind
+// "ansible-vault gui" and the standalone ansible-vault-gui binary.
+package guiserver
 
 import (
 	"crypto/rand"
@@ -16,20 +18,29 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
+
+	"ansible-vault/internal/vault"
 )
 
 //go:embed gui.html
 var guiHTML string
 
-// defaultGUIAddr is fixed (rather than an OS-assigned random port) so the
+// DefaultAddr is fixed (rather than an OS-assigned random port) so the
 // page's origin stays the same across restarts, which is what lets the
 // browser's localStorage-based settings persistence survive a restart. Only
-// one GUI instance can bind this port at a time; use -addr to run more.
-const defaultGUIAddr = "127.0.0.1:47990"
+// one GUI instance can bind this port at a time; pass a different addr to
+// Run to use more.
+const DefaultAddr = "127.0.0.1:47990"
 
-// runGUI starts a local web server serving the GUI and opens it in the
-// default browser. It blocks until the server exits (Ctrl+C to stop).
-func runGUI(addr string) error {
+// Run starts the local GUI server on addr and blocks until the server
+// exits — either because the browser tab was closed (see the /api/shutdown
+// handler) or the process is killed. onReady, if non-nil, is called once
+// with the page's URL (including the session token) after the server
+// starts listening but before it opens the browser, so the caller can
+// report status however it likes (print to a terminal, or nothing at all
+// for a silent, windowless launch).
+func Run(addr string, onReady func(url string)) error {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("starting GUI server: %w", err)
@@ -59,9 +70,26 @@ func runGUI(addr string) error {
 	mux.HandleFunc("/api/inline", requireToken(token, handleInline))
 	mux.HandleFunc("/api/browse", requireToken(token, handleBrowse))
 	mux.HandleFunc("/api/preview", requireToken(token, handlePreview))
+	mux.HandleFunc("/api/shutdown", func(w http.ResponseWriter, r *http.Request) {
+		// navigator.sendBeacon (used by the page's pagehide handler, see
+		// gui.html) can't set custom headers, so this one endpoint takes
+		// the token as a query parameter instead of the X-Vault-Token
+		// header the others require.
+		if r.URL.Query().Get("token") != token {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			os.Exit(0)
+		}()
+	})
 
 	url := fmt.Sprintf("http://%s/?token=%s", listener.Addr().String(), token)
-	fmt.Fprintf(os.Stderr, "ansible-vault GUI running at %s\n(Ctrl+C to stop)\n", url)
+	if onReady != nil {
+		onReady(url)
+	}
 	openBrowser(url)
 
 	return http.Serve(listener, mux)
@@ -131,14 +159,14 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, fmt.Errorf("reading input file: %w", err))
 		return
 	}
-	if encrypt && isVaultText(raw) {
+	if encrypt && vault.IsVaultText(raw) {
 		writeError(w, fmt.Errorf("%s is already encrypted; decrypt it first if you want to re-encrypt it", req.Path))
 		return
 	}
 
 	switch req.Action {
 	case "view":
-		plaintext, err := viewFile(raw, pw)
+		plaintext, err := vault.ViewFile(raw, pw)
 		if err != nil {
 			writeError(w, err)
 			return
@@ -147,9 +175,9 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 	case "encrypt", "decrypt":
 		var result []byte
 		if encrypt {
-			result, err = encryptVault(raw, pw, true)
+			result, err = vault.EncryptVault(raw, pw, true)
 		} else {
-			result, err = decryptVault(raw, pw)
+			result, err = vault.DecryptVault(raw, pw)
 		}
 		if err != nil {
 			writeError(w, err)
@@ -198,12 +226,12 @@ func handleInline(w http.ResponseWriter, r *http.Request) {
 			writeError(w, errors.New("secret is required"))
 			return
 		}
-		vaultText, err := encryptVault([]byte(req.Secret), pw, req.Multiline)
+		vaultText, err := vault.EncryptVault([]byte(req.Secret), pw, req.Multiline)
 		if err != nil {
 			writeError(w, err)
 			return
 		}
-		writeJSON(w, apiResponse{OK: true, Result: string(formatInlineVault(vaultText, req.Name))})
+		writeJSON(w, apiResponse{OK: true, Result: string(vault.FormatInlineVault(vaultText, req.Name))})
 		return
 	}
 
@@ -211,7 +239,7 @@ func handleInline(w http.ResponseWriter, r *http.Request) {
 		writeError(w, errors.New("vault text is required"))
 		return
 	}
-	plaintext, err := decryptVault([]byte(req.VaultText), pw)
+	plaintext, err := vault.DecryptVault([]byte(req.VaultText), pw)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -346,11 +374,11 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, previewResponse{OK: true, Content: string(buf[:n]), Truncated: truncated})
 }
 
-// resolveGUIPassword is resolvePassword without the CLI's interactive-prompt
-// fallback (the GUI has no terminal to prompt on) — instead it errors out
-// asking the user to fill in a password field.
+// resolveGUIPassword is vault.ResolvePassword without the CLI's
+// interactive-prompt fallback (the GUI has no terminal to prompt on) —
+// instead it errors out asking the user to fill in a password field.
 func resolveGUIPassword(password, passwordFile, passwordEnv string) ([]byte, error) {
-	pw, ok, err := resolvePassword(password, passwordFile, passwordEnv)
+	pw, ok, err := vault.ResolvePassword(password, passwordFile, passwordEnv)
 	if err != nil {
 		return nil, err
 	}

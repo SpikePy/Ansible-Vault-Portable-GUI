@@ -3,8 +3,9 @@
 A minimal, dependency-light command-line tool for encrypting and decrypting
 [Ansible Vault](https://docs.ansible.com/ansible/latest/vault_guide/index.html)
 files and inline `!vault` secrets — written in Go, with no dependency on
-Python or `ansible-core`. Ships as a single static binary for Linux and
-Windows.
+Python or `ansible-core`. Ships as static binaries for Linux and Windows:
+`ansible-vault` (the CLI) and `ansible-vault-gui` (a windowless launcher
+straight into the GUI — see "GUI" below).
 
 Implements the standard **AES256** vault cipher (format `1.1`/`1.2`):
 PBKDF2-HMAC-SHA256 key derivation, AES-256-CTR encryption, and an
@@ -17,12 +18,12 @@ HMAC-SHA256 integrity check — the same scheme `ansible-vault` itself uses.
 - Encrypt / decrypt a single secret inline, as the
   `name: !vault |` block format Ansible uses for individual vaulted
   variables embedded in an otherwise plaintext YAML file
-- A simple local GUI (`ansible-vault gui`) covering the same operations,
+- A simple local GUI (`ansible-vault-gui`) covering the same operations,
   for when you'd rather not use the CLI
 - Password via CLI flag, file, environment variable, the standard
   `ANSIBLE_VAULT_PASSWORD` environment variable, or an interactive
   (hidden-input) prompt
-- No runtime dependencies — a single static binary
+- No runtime dependencies — static binaries, nothing to install
 - Cross-compiles cleanly for Linux and Windows
 
 ## Installation
@@ -34,35 +35,43 @@ Requires Go 1.21+.
 ```sh
 git clone <this-repo>
 cd ansible-vault
-go build -o ansible-vault .
+go build -o ansible-vault ./cmd/ansible-vault
+go build -o ansible-vault-gui ./cmd/ansible-vault-gui
 ```
 
 ### Cross-compile
 
+The GUI launcher's Windows build additionally needs `-H=windowsgui` (a
+linker flag that marks the binary as a GUI-subsystem app, so Windows never
+allocates a console for it) — the CLI binary must *not* get that flag, or
+its command output would have nowhere to go when run from a terminal.
+
 ```sh
-GOOS=linux   GOARCH=amd64 go build -ldflags="-s -w" -o dist/ansible-vault .
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/ansible-vault.exe .
+GOOS=linux   GOARCH=amd64 go build -ldflags="-s -w" -o dist/ansible-vault ./cmd/ansible-vault
+GOOS=linux   GOARCH=amd64 go build -ldflags="-s -w" -o dist/ansible-vault-gui ./cmd/ansible-vault-gui
+GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/ansible-vault.exe ./cmd/ansible-vault
+GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -H=windowsgui" -o dist/ansible-vault-gui.exe ./cmd/ansible-vault-gui
 ```
 
 ### CI
 
-`.gitlab-ci.yml` cross-compiles both binaries on every push and publishes
-them as pipeline job artifacts (30-day expiry) — download them from the
-pipeline's **Job artifacts** panel. Compiled binaries aren't committed to
-the repo (`dist/` is gitignored); build from source or grab them from CI.
+`.gitlab-ci.yml` cross-compiles all four binaries on every push and
+publishes them as pipeline job artifacts (30-day expiry) — download them
+from the pipeline's **Job artifacts** panel. Compiled binaries aren't
+committed to the repo (`dist/` is gitignored); build from source or grab
+them from CI.
 
 ## Usage
 
 ```
 usage: ansible-vault (encrypt|decrypt|view) --file/-f <file> [options]
        ansible-vault (encrypt|decrypt) --inline/-i <secret> [options]
-       ansible-vault gui [--addr host:port]
 ```
 
-Every invocation starts with a command — `encrypt`, `decrypt`, `view`, or
-`gui` — followed by either `--file`/`-f <path>` or (for `encrypt`/
-`decrypt`) `--inline`/`-i <secret>`, plus any password options. Every
-option has both a long and, except `--addr`, a short form:
+Every invocation starts with a command — `encrypt`, `decrypt`, or `view`
+— followed by either `--file`/`-f <path>` or (for `encrypt`/`decrypt`)
+`--inline`/`-i <secret>`, plus any password options. Every option has
+both a long and a short form:
 
 | long             | short | meaning                              |
 |------------------|-------|---------------------------------------|
@@ -82,8 +91,8 @@ long name (`-file`), for backward compatibility.
   content to stdout. `view` does not accept `--inline`.
 - `encrypt --inline` / `decrypt --inline` take the secret directly as an
   argument and always print the result to stdout.
-- Running `ansible-vault` with **no arguments** starts the GUI (same as
-  `gui` with no `--addr`) — handy for a desktop shortcut/launcher.
+- For the GUI, use the separate `ansible-vault-gui` binary (see "GUI"
+  below) — `ansible-vault` itself is CLI-only.
 
 Run `ansible-vault -h` for this summary, or `ansible-vault <command> -h`
 for command-specific help.
@@ -138,9 +147,16 @@ ansible-vault decrypt --inline "db_password: !vault |
 
 ### GUI
 
+![ansible-vault GUI screenshot](docs/gui-screenshot.png)
+
 ```sh
-ansible-vault gui
+ansible-vault-gui
 ```
+
+Or, on Windows, just double-click `ansible-vault-gui.exe` — on Windows
+this binary is built with the GUI subsystem, so it never opens a console
+window, not even briefly. `ansible-vault` (the CLI binary) does not have
+a `gui` command; the GUI is only ever launched via `ansible-vault-gui`.
 
 Starts a small local web server (bound to `127.0.0.1` on a fixed port,
 `47990`, by default) serving a page with all the same operations —
@@ -206,11 +222,14 @@ forgotten on the next run if the port changed every time. This does mean
 passwords sit in plaintext in that browser profile's local storage
 indefinitely — fine for a personal machine, worth keeping in mind on a
 shared one. Only one GUI instance can use a given port at a time; run a
-second one with `--addr 127.0.0.1:<other-port>` (its browser storage, and
-therefore its remembered settings, will be separate from the default
-instance's).
+second one with `ansible-vault-gui --addr 127.0.0.1:<other-port>` (its
+browser storage, and therefore its remembered settings, will be separate
+from the default instance's).
 
-Stop the GUI with Ctrl+C in the terminal it's running in.
+**The server stops itself when its browser tab is closed** (or navigated
+away from, or reloaded — the page sends a shutdown request on the way
+out either way), so there's nothing to clean up manually. If it's running
+in a terminal, Ctrl+C also works.
 
 ### Supplying the password
 

@@ -17,8 +17,8 @@
   }
   * { box-sizing: border-box; }
   body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
-  header { padding: 1.25rem 1.5rem; border-bottom:1px solid var(--border); }
-  header h1 { margin:0; font-size:1.25rem; }
+  header { padding: 1.25rem 1.5rem; border-bottom:1px solid var(--border); text-align:center; }
+  header h1 { margin:0; font-size:2.25rem; }
   header p { margin:.25rem 0 0; color:var(--muted); font-size:.875rem; }
   main { max-width: 860px; margin: 0 auto; padding: 1.5rem; }
   .tabs { display:flex; gap:.5rem; margin-bottom:1rem; }
@@ -82,7 +82,7 @@
 </head>
 <body>
 <header>
-  <h1>ansible-vault</h1>
+  <h1>Ansible-Vault</h1>
   <p>Local GUI — everything runs on this machine; nothing is sent anywhere else.</p>
 </header>
 <main>
@@ -629,6 +629,15 @@ document.getElementById('browse-go-btn').addEventListener('click', function () {
 });
 document.getElementById('browse-cancel-btn').addEventListener('click', function () {
   browseDialog.close();
+});
+
+// Stop the local server when this tab goes away (closed, navigated away
+// from, or reloaded) — there's no point leaving it running unattended.
+// sendBeacon is used because it's the one request type browsers reliably
+// still deliver during page teardown; it can't carry a custom header, so
+// the token goes in the query string instead of X-Vault-Token here.
+window.addEventListener('pagehide', function () {
+  navigator.sendBeacon('/api/shutdown?token=' + encodeURIComponent(TOKEN));
 });
 </script>
 </body>

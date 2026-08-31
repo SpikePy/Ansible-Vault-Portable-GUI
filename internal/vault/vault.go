@@ -1,4 +1,8 @@
-package main
+// Package vault implements the Ansible Vault AES256 cipher (format
+// 1.1/1.2): PBKDF2-HMAC-SHA256 key derivation, AES-256-CTR encryption, and
+// an HMAC-SHA256 integrity check. It's shared by the CLI (cmd/ansible-vault)
+// and the local GUI server (internal/guiserver).
+package vault
 
 import (
 	"bytes"
@@ -10,6 +14,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"golang.org/x/crypto/pbkdf2"
@@ -27,7 +32,7 @@ const (
 	defaultPasswordEnv = "ANSIBLE_VAULT_PASSWORD"
 )
 
-func decryptVault(raw []byte, password []byte) ([]byte, error) {
+func DecryptVault(raw []byte, password []byte) ([]byte, error) {
 	salt, expectedHMAC, ciphertext, err := parseVaultText(raw)
 	if err != nil {
 		return nil, err
@@ -35,7 +40,7 @@ func decryptVault(raw []byte, password []byte) ([]byte, error) {
 	return decryptVaultParts(salt, expectedHMAC, ciphertext, password)
 }
 
-// decryptVaultParts is decryptVault's core, taking the already-parsed salt,
+// decryptVaultParts is DecryptVault's core, taking the already-parsed salt,
 // HMAC and ciphertext directly. Split out so decryptInlineVaults can decrypt
 // several separately-parsed blocks within one larger file without having to
 // glue each one back into a full vault-text string first.
@@ -65,13 +70,13 @@ func decryptVaultParts(salt, expectedHMAC, ciphertext, password []byte) ([]byte,
 	return unpad(padded)
 }
 
-// viewFile decrypts raw for a non-destructive preview: if the whole file is
+// ViewFile decrypts raw for a non-destructive preview: if the whole file is
 // a standard vault (starts with the $ANSIBLE_VAULT header), it's decrypted
 // as usual. Otherwise, raw is scanned for one or more inline "name: !vault
 // |" blocks (the format for a single vault-encrypted variable embedded in
 // an otherwise plaintext file) and each one found is replaced by its
 // decrypted plaintext value, leaving the rest of the file untouched.
-func viewFile(raw []byte, password []byte) ([]byte, error) {
+func ViewFile(raw []byte, password []byte) ([]byte, error) {
 	firstNonBlank := ""
 	for _, line := range strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n") {
 		if t := strings.TrimSpace(line); t != "" {
@@ -80,7 +85,7 @@ func viewFile(raw []byte, password []byte) ([]byte, error) {
 		}
 	}
 	if strings.HasPrefix(firstNonBlank, vaultHeaderPrefix) {
-		return decryptVault(raw, password)
+		return DecryptVault(raw, password)
 	}
 
 	out, count, err := decryptInlineVaults(raw, password)
@@ -159,12 +164,12 @@ func decryptInlineVaults(raw []byte, password []byte) ([]byte, int, error) {
 	return []byte(strings.Join(out, "\n")), count, nil
 }
 
-// encryptVault encrypts plaintext into the standard vault text format. When
+// EncryptVault encrypts plaintext into the standard vault text format. When
 // multiline is true, the hex body is wrapped at lineWidth characters per
 // line (the format ansible-vault itself produces); when false, the entire
 // hex body is emitted as a single line. Both are valid, equivalent input to
-// decryptVault/parseVaultText — this only affects how the output looks.
-func encryptVault(plaintext []byte, password []byte, multiline bool) ([]byte, error) {
+// DecryptVault/parseVaultText — this only affects how the output looks.
+func EncryptVault(plaintext []byte, password []byte, multiline bool) ([]byte, error) {
 	salt := make([]byte, saltLength)
 	if _, err := rand.Read(salt); err != nil {
 		return nil, fmt.Errorf("generating salt: %w", err)
@@ -227,12 +232,12 @@ func wrapLines(s string, width int) string {
 	return sb.String()
 }
 
-// isVaultText reports whether raw already looks like an encrypted vault
+// IsVaultText reports whether raw already looks like an encrypted vault
 // (any line starts with the $ANSIBLE_VAULT; header prefix). Both this
-// tool's own encryptVault output and real ansible-vault files always
+// tool's own EncryptVault output and real ansible-vault files always
 // include that header line, so this is enough to catch "encrypt" being
 // pointed at an already-encrypted file before it double-encrypts it.
-func isVaultText(raw []byte) bool {
+func IsVaultText(raw []byte) bool {
 	text := strings.ReplaceAll(string(raw), "\r\n", "\n")
 	for _, line := range strings.Split(text, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), vaultHeaderPrefix) {
@@ -358,4 +363,52 @@ func unpad(data []byte) ([]byte, error) {
 		}
 	}
 	return data[:len(data)-padLen], nil
+}
+
+// FormatInlineVault renders vaultText (the output of EncryptVault) as the
+// "name: !vault |" block style ansible-vault itself produces.
+func FormatInlineVault(vaultText []byte, name string) []byte {
+	lines := strings.Split(strings.TrimRight(string(vaultText), "\n"), "\n")
+	var out strings.Builder
+	if name != "" {
+		out.WriteString(name)
+		out.WriteString(": ")
+	}
+	out.WriteString("!vault |\n")
+	for _, line := range lines {
+		out.WriteString(inlineIndent)
+		out.WriteString(line)
+		out.WriteByte('\n')
+	}
+	return []byte(out.String())
+}
+
+// ResolvePassword resolves the vault password from a CLI flag, a file, an
+// environment variable, or the default ANSIBLE_VAULT_PASSWORD environment
+// variable (checked in that order, first match wins). ok is false only when
+// none of password/passwordFile/passwordEnv/ANSIBLE_VAULT_PASSWORD provided
+// a password — the caller decides what to do next (prompt, or report an
+// error, depending on whether an interactive terminal is available).
+func ResolvePassword(password, passwordFile, passwordEnv string) (pw []byte, ok bool, err error) {
+	switch {
+	case password != "":
+		return []byte(password), true, nil
+	case passwordFile != "":
+		data, err := os.ReadFile(passwordFile)
+		if err != nil {
+			return nil, false, fmt.Errorf("reading password file: %w", err)
+		}
+		return bytes.TrimRight(data, "\r\n"), true, nil
+	case passwordEnv != "":
+		val, ok := os.LookupEnv(passwordEnv)
+		if !ok {
+			return nil, false, fmt.Errorf("environment variable %s is not set", passwordEnv)
+		}
+		return []byte(val), true, nil
+	default:
+		if val, ok := os.LookupEnv(defaultPasswordEnv); ok {
+			return []byte(val), true, nil
+		}
+		return nil, false, nil
+	}
 }

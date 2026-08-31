@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"golang.org/x/term"
+
+	"ansible-vault/internal/vault"
 )
 
 func main() {
@@ -64,45 +66,15 @@ func printCommandOptions(command string) {
 	}
 }
 
-// printFlagDefaults is flag.FlagSet.PrintDefaults, but rendered with
-// double-dash flag names ("--addr" rather than "-addr") to match this
-// tool's documented long-option style; the flag itself still accepts
-// either a single or double leading dash (that's a built-in behavior of the
-// flag package, not something this changes). Only used for flag sets with
-// no single-letter aliases (see printCommandOptions for those).
-func printFlagDefaults(fs *flag.FlagSet) {
-	var buf bytes.Buffer
-	out := fs.Output()
-	fs.SetOutput(&buf)
-	fs.PrintDefaults()
-	fs.SetOutput(out)
-	fmt.Fprint(out, strings.TrimPrefix(strings.ReplaceAll("\n"+buf.String(), "\n  -", "\n  --"), "\n"))
-}
-
 func run() error {
 	if len(os.Args) < 2 {
-		return runGUI(defaultGUIAddr)
+		printTopUsage()
+		os.Exit(2)
 	}
 	command := os.Args[1]
 	if command == "-h" || command == "-help" || command == "--help" {
 		printTopUsage()
 		os.Exit(0)
-	}
-
-	if command == "gui" {
-		fs := flag.NewFlagSet("gui", flag.ExitOnError)
-		addr := fs.String("addr", defaultGUIAddr, "address to run the local GUI server on")
-		fs.Usage = func() {
-			fmt.Fprintf(os.Stderr, "usage: %s gui [--addr host:port]\n\n"+
-				"Starts a local web server (bound to 127.0.0.1 on a fixed port by\n"+
-				"default, so the page's browser-local storage survives restarts)\n"+
-				"serving a GUI for all encrypt/decrypt/view operations, and opens it\n"+
-				"in your default browser. The password is entered in the GUI itself,\n"+
-				"so none of --password/--password-file/--password-env apply here.\n\noptions:\n", os.Args[0])
-			printFlagDefaults(fs)
-		}
-		fs.Parse(os.Args[2:])
-		return runGUI(*addr)
 	}
 
 	if _, ok := commandUsage[command]; !ok {
@@ -159,10 +131,8 @@ func run() error {
 
 func printTopUsage() {
 	fmt.Fprintf(os.Stderr, "usage: %s (encrypt|decrypt|view) --file/-f <file> [options]\n"+
-		"       %s (encrypt|decrypt) --inline/-i <secret> [options]\n"+
-		"       %s gui [--addr host:port]\n\n"+
-		"run with no arguments to start the GUI (same as 'gui' with no --addr).\n"+
-		"run '%s <command> -h' for command-specific help\n", os.Args[0], os.Args[0], os.Args[0], os.Args[0])
+		"       %s (encrypt|decrypt) --inline/-i <secret> [options]\n\n"+
+		"run '%s <command> -h' for command-specific help\n", os.Args[0], os.Args[0], os.Args[0])
 }
 
 // runFile encrypts or decrypts path in place, keeping its name and
@@ -177,7 +147,7 @@ func runFile(path string, encrypt bool, password, passwordFile, passwordEnv stri
 	if err != nil {
 		return fmt.Errorf("reading input file: %w", err)
 	}
-	if encrypt && isVaultText(raw) {
+	if encrypt && vault.IsVaultText(raw) {
 		return fmt.Errorf("%s is already encrypted; decrypt it first if you want to re-encrypt it", path)
 	}
 
@@ -188,9 +158,9 @@ func runFile(path string, encrypt bool, password, passwordFile, passwordEnv stri
 
 	var result []byte
 	if encrypt {
-		result, err = encryptVault(raw, pw, true)
+		result, err = vault.EncryptVault(raw, pw, true)
 	} else {
-		result, err = decryptVault(raw, pw)
+		result, err = vault.DecryptVault(raw, pw)
 	}
 	if err != nil {
 		return err
@@ -201,7 +171,7 @@ func runFile(path string, encrypt bool, password, passwordFile, passwordEnv stri
 
 // runView decrypts path and prints it to stdout without modifying it. path
 // can be a full vault file, or a plain file containing one or more inline
-// "!vault" blocks (see viewFile).
+// "!vault" blocks (see vault.ViewFile).
 func runView(path, password, passwordFile, passwordEnv string) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -213,7 +183,7 @@ func runView(path, password, passwordFile, passwordEnv string) error {
 		return err
 	}
 
-	plaintext, err := viewFile(raw, pw)
+	plaintext, err := vault.ViewFile(raw, pw)
 	if err != nil {
 		return err
 	}
@@ -241,15 +211,15 @@ func runInline(arg string, encrypt bool, password, passwordFile, passwordEnv str
 		if idx := strings.IndexByte(arg, '='); idx >= 0 {
 			name, secret = arg[:idx], arg[idx+1:]
 		}
-		vaultText, err := encryptVault([]byte(secret), pw, true)
+		vaultText, err := vault.EncryptVault([]byte(secret), pw, true)
 		if err != nil {
 			return err
 		}
-		_, err = os.Stdout.Write(formatInlineVault(vaultText, name))
+		_, err = os.Stdout.Write(vault.FormatInlineVault(vaultText, name))
 		return err
 	}
 
-	plaintext, err := decryptVault([]byte(arg), pw)
+	plaintext, err := vault.DecryptVault([]byte(arg), pw)
 	if err != nil {
 		return err
 	}
@@ -260,58 +230,11 @@ func runInline(arg string, encrypt bool, password, passwordFile, passwordEnv str
 	return err
 }
 
-// formatInlineVault renders vaultText (the output of encryptVault) as the
-// "name: !vault |" block style ansible-vault itself produces.
-func formatInlineVault(vaultText []byte, name string) []byte {
-	lines := strings.Split(strings.TrimRight(string(vaultText), "\n"), "\n")
-	var out strings.Builder
-	if name != "" {
-		out.WriteString(name)
-		out.WriteString(": ")
-	}
-	out.WriteString("!vault |\n")
-	for _, line := range lines {
-		out.WriteString(inlineIndent)
-		out.WriteString(line)
-		out.WriteByte('\n')
-	}
-	return []byte(out.String())
-}
-
-// resolvePassword resolves the vault password from a CLI flag, a file, an
-// environment variable, or the default ANSIBLE_VAULT_PASSWORD environment
-// variable (checked in that order, first match wins). ok is false only when
-// none of password/passwordFile/passwordEnv/ANSIBLE_VAULT_PASSWORD provided
-// a password — the caller decides what to do next (prompt, or report an
-// error, depending on whether an interactive terminal is available).
-func resolvePassword(password, passwordFile, passwordEnv string) (pw []byte, ok bool, err error) {
-	switch {
-	case password != "":
-		return []byte(password), true, nil
-	case passwordFile != "":
-		data, err := os.ReadFile(passwordFile)
-		if err != nil {
-			return nil, false, fmt.Errorf("reading password file: %w", err)
-		}
-		return bytes.TrimRight(data, "\r\n"), true, nil
-	case passwordEnv != "":
-		val, ok := os.LookupEnv(passwordEnv)
-		if !ok {
-			return nil, false, fmt.Errorf("environment variable %s is not set", passwordEnv)
-		}
-		return []byte(val), true, nil
-	default:
-		if val, ok := os.LookupEnv(defaultPasswordEnv); ok {
-			return []byte(val), true, nil
-		}
-		return nil, false, nil
-	}
-}
-
-// getPassword is resolvePassword plus an interactive, hidden-input prompt
-// fallback for the CLI (asked twice and required to match when encrypting).
+// getPassword is vault.ResolvePassword plus an interactive, hidden-input
+// prompt fallback for the CLI (asked twice and required to match when
+// encrypting).
 func getPassword(password, passwordFile, passwordEnv string, encrypt bool) ([]byte, error) {
-	pw, ok, err := resolvePassword(password, passwordFile, passwordEnv)
+	pw, ok, err := vault.ResolvePassword(password, passwordFile, passwordEnv)
 	if err != nil {
 		return nil, err
 	}
