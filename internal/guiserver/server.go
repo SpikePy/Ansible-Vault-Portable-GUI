@@ -13,9 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -386,17 +384,4 @@ func resolveGUIPassword(password, passwordFile, passwordEnv string) ([]byte, err
 		return nil, errors.New("no password given (and ANSIBLE_VAULT_PASSWORD is not set)")
 	}
 	return pw, nil
-}
-
-func openBrowser(url string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", "", url)
-	case "darwin":
-		cmd = exec.Command("open", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
-	}
-	_ = cmd.Start()
 }
