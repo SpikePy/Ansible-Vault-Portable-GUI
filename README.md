@@ -29,6 +29,10 @@ HMAC-SHA256 integrity check — the same scheme `ansible-vault` itself uses.
 
 ## Installation
 
+Grab the binary for your OS from the
+[latest release](https://github.com/SpikePy/Ansible-Vault-Portable-GUI/releases/latest) —
+no install step, just run it.
+
 ### Build from source
 
 Requires Go 1.21+.
@@ -50,14 +54,6 @@ GOOS=darwin  GOARCH=arm64   go build -ldflags="-s -w" -o dist/ansible-vault-port
 
 `-H=windowsgui` marks the Windows binary as a GUI-subsystem app, so it
 never briefly flashes a console.
-
-### CI / releases
-
-`.gitlab-ci.yml` runs `go vet`/`go test` and cross-compiles all four
-binaries as pipeline artifacts on every push (`dist/` itself is
-gitignored). `.github/workflows/release.yml` does the same on a `v*` tag
-push, then publishes a GitHub Release with the binaries attached and
-auto-generated notes.
 
 ## Usage
 
