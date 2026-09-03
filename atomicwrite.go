@@ -14,7 +14,7 @@ import (
 // to clean up, never a corrupted target file.
 func atomicWriteFile(path string, data []byte, mode os.FileMode) (err error) {
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".ansible-vault-gui-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".ansible-vault-portable-gui-*.tmp")
 	if err != nil {
 		return err
 	}

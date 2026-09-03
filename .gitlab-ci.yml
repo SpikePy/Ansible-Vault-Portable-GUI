@@ -7,12 +7,12 @@ build:
   script:
     - go vet ./...
     - go test ./...
-    - GOOS=linux   GOARCH=amd64   go build -ldflags="-s -w" -o dist/ansible-vault-gui .
-    - GOOS=windows GOARCH=amd64   go build -ldflags="-s -w -H=windowsgui" -o dist/ansible-vault-gui.exe .
-    - GOOS=darwin  GOARCH=amd64   go build -ldflags="-s -w" -o dist/ansible-vault-gui-macos-amd64 .
-    - GOOS=darwin  GOARCH=arm64   go build -ldflags="-s -w" -o dist/ansible-vault-gui-macos-arm64 .
+    - GOOS=linux   GOARCH=amd64   go build -ldflags="-s -w" -o dist/ansible-vault-portable-gui .
+    - GOOS=windows GOARCH=amd64   go build -ldflags="-s -w -H=windowsgui" -o dist/ansible-vault-portable-gui.exe .
+    - GOOS=darwin  GOARCH=amd64   go build -ldflags="-s -w" -o dist/ansible-vault-portable-gui-macos-amd64 .
+    - GOOS=darwin  GOARCH=arm64   go build -ldflags="-s -w" -o dist/ansible-vault-portable-gui-macos-arm64 .
   artifacts:
-    name: "ansible-vault-gui-$CI_COMMIT_SHORT_SHA"
+    name: "ansible-vault-portable-gui-$CI_COMMIT_SHORT_SHA"
     paths:
       - dist/
     expire_in: 30 days

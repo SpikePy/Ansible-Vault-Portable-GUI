@@ -1,4 +1,4 @@
-// Command ansible-vault-gui is a windowless local GUI for encrypting and
+// Command ansible-vault-portable-gui is a windowless local GUI for encrypting and
 // decrypting Ansible Vault files and inline "!vault" secrets. It starts a
 // local web server silently (no terminal/console output), opens the
 // default browser, and exits on its own once that browser tab is closed

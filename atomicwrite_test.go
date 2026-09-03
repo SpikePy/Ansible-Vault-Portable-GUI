@@ -112,7 +112,7 @@ func TestAtomicWriteFileCleansUpTempFileOnFailure(t *testing.T) {
 
 	// Make the directory read-only so os.Chmod on the temp file (or the
 	// final rename) fails partway through, then confirm no stray
-	// .ansible-vault-gui-*.tmp file is left behind.
+	// .ansible-vault-portable-gui-*.tmp file is left behind.
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestAtomicWriteFileCleansUpTempFileOnFailure(t *testing.T) {
 		t.Skipf("could not list temp dir to check for leftovers: %v", err)
 	}
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".ansible-vault-gui-") {
+		if strings.HasPrefix(e.Name(), ".ansible-vault-portable-gui-") {
 			t.Errorf("leftover temp file: %s", e.Name())
 		}
 	}

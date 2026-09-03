@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ansible-Vault GUI</title>
+<title>Ansible-Vault Portable GUI</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔒</text></svg>">
 <style>
   :root {
@@ -82,7 +82,7 @@
 </head>
 <body>
 <header>
-  <h1>Ansible-Vault GUI</h1>
+  <h1>Ansible-Vault Portable GUI</h1>
   <p>Local GUI — everything runs on this machine; nothing is sent anywhere else.</p>
 </header>
 <main>
@@ -100,7 +100,7 @@
       <div class="row">
         <label for="file-path">File path</label>
         <div class="path-row">
-          <input type="text" id="file-path" placeholder="/path/to/secrets.yml" autocomplete="off">
+          <input type="text" id="file-path" placeholder="/path/to/secrets.yml" autocomplete="off" list="history-file-path">
           <button type="button" class="browse-btn" data-browse-target="file-path">Browse…</button>
         </div>
         <p class="hint">encrypt always overwrites this file in place. decrypt only previews it by default — check the box below to actually overwrite it. Previewing also works on a file that isn't fully encrypted but has one or more inline "!vault" secrets in it — those get decrypted for display, everything else is shown as-is.</p>
@@ -199,7 +199,7 @@
     </form>
   </section>
 
-  <footer>Ansible-Vault GUI · AES256 vault format 1.1/1.2 · <a href="https://github.com/SpikePy/Ansible-Vault-GUI" target="_blank" rel="noopener noreferrer">GitHub</a></footer>
+  <footer>Ansible-Vault Portable GUI · AES256 vault format 1.1/1.2 · <a href="https://github.com/SpikePy/Ansible-Vault-Portable-GUI" target="_blank" rel="noopener noreferrer">GitHub</a></footer>
 </main>
 
 <dialog id="browse-dialog">
@@ -214,6 +214,9 @@
   </div>
 </dialog>
 
+<datalist id="history-file-path"></datalist>
+<datalist id="history-password-file"></datalist>
+
 <script>
 const TOKEN = "__TOKEN__";
 
@@ -223,7 +226,7 @@ const TOKEN = "__TOKEN__";
 // shutdown its previous pagehide (see below) just scheduled. Sent twice as
 // a small safety margin against request ordering.
 (function () {
-  const FLAG = 'ansible-vault-gui:open';
+  const FLAG = 'ansible-vault-portable-gui:open';
   const isReload = sessionStorage.getItem(FLAG) === '1';
   sessionStorage.setItem(FLAG, '1');
   if (isReload) {
@@ -349,11 +352,13 @@ function setupPasswordMode(formEl, modeGroupName, valueInputId) {
       input.type = 'text';
       toggleBtn.hidden = true;
       browseBtn.hidden = false;
+      input.setAttribute('list', 'history-password-file');
     } else {
       input.type = 'text';
       toggleBtn.hidden = true;
       browseBtn.hidden = true;
     }
+    if (mode !== 'file') input.removeAttribute('list');
   }
 
   formEl.querySelectorAll('input[name="' + modeGroupName + '"]').forEach(function (r) {
@@ -373,6 +378,71 @@ function passwordFieldsFromMode(formEl, modeGroupName, valueInputId) {
     passwordEnv: mode === 'env' ? value : '',
   };
 }
+
+// Stores each of a password-source field's three modes (typed password,
+// password-file path, env var name) under its own localStorage key, so
+// switching the mode radio doesn't clobber or mix up what's in the other
+// two — each is remembered independently and restored when you switch
+// back to it.
+function setupPasswordModeStorage(formEl, modeGroupName, valueInputId, storageKey) {
+  const input = document.getElementById(valueInputId);
+  const keyFor = function (mode) { return storageKey + ':' + valueInputId + ':' + mode; };
+  const currentMode = function () {
+    return formEl.querySelector('input[name="' + modeGroupName + '"]:checked').value;
+  };
+
+  function loadCurrent() {
+    try {
+      input.value = localStorage.getItem(keyFor(currentMode())) || '';
+    } catch (e) { /* ignore */ }
+  }
+
+  input.addEventListener('input', function () {
+    try {
+      localStorage.setItem(keyFor(currentMode()), input.value);
+    } catch (e) { /* ignore */ }
+  });
+  formEl.querySelectorAll('input[name="' + modeGroupName + '"]').forEach(function (r) {
+    r.addEventListener('change', loadCurrent);
+  });
+  loadCurrent();
+}
+
+// Remembers the last 5 distinct paths used for a given kind of file (vault
+// files, password files) and offers them as browser-native suggestions
+// (a <datalist> dropdown shown on focus/click) for next time.
+function recentPaths(historyId) {
+  try {
+    return JSON.parse(localStorage.getItem('ansible-vault-portable-gui:history:' + historyId) || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+
+function renderPathHistory(historyId) {
+  const datalist = document.getElementById(historyId);
+  if (!datalist) return;
+  datalist.innerHTML = '';
+  recentPaths(historyId).forEach(function (p) {
+    const opt = document.createElement('option');
+    opt.value = p;
+    datalist.appendChild(opt);
+  });
+}
+
+function rememberPath(historyId, path) {
+  if (!path) return;
+  let list = recentPaths(historyId).filter(function (p) { return p !== path; });
+  list.unshift(path);
+  list = list.slice(0, 5);
+  try {
+    localStorage.setItem('ansible-vault-portable-gui:history:' + historyId, JSON.stringify(list));
+  } catch (e) { /* ignore */ }
+  renderPathHistory(historyId);
+}
+
+renderPathHistory('history-file-path');
+renderPathHistory('history-password-file');
 
 // Unbiased random integer in [0, max) via rejection sampling.
 function randomInt(max) {
@@ -473,11 +543,12 @@ function syncFileOverwriteRow() {
 fileForm.querySelectorAll('input[name=file-action]').forEach(function (r) {
   r.addEventListener('change', syncFileOverwriteRow);
 });
-setupPersistence('ansible-vault-gui:file', fileForm,
-  ['file-path', 'file-password-value'],
+setupPersistence('ansible-vault-portable-gui:file', fileForm,
+  ['file-path'],
   ['file-action', 'file-password-mode'],
   ['file-overwrite']);
 setupPasswordMode(fileForm, 'file-password-mode', 'file-password-value');
+setupPasswordModeStorage(fileForm, 'file-password-mode', 'file-password-value', 'ansible-vault-portable-gui:file');
 setupGeneratePassword(fileForm, 'file-action', 'file-password-mode', 'file-password-value');
 syncFileOverwriteRow();
 
@@ -557,10 +628,11 @@ fileForm.addEventListener('submit', async function (e) {
     const overwriteEnabled = document.getElementById('file-overwrite').checked;
     const action = (radioAction === 'decrypt' && !overwriteEnabled) ? 'view' : radioAction;
     const path = document.getElementById('file-path').value;
+    const pwFields = passwordFieldsFromMode(fileForm, 'file-password-mode', 'file-password-value');
     const body = Object.assign({
       action: action,
       path: path,
-    }, passwordFieldsFromMode(fileForm, 'file-password-mode', 'file-password-value'));
+    }, pwFields);
     const resp = await callAPI('/api/file', body);
     if (!resp.ok) {
       setStatus(statusEl, false, resp.message);
@@ -571,6 +643,8 @@ fileForm.addEventListener('submit', async function (e) {
     resultBox.hidden = false;
     setStatus(statusEl, true, action === 'view' ? 'Decrypted (file left unchanged).' : (resp.message || 'Done.'));
     loadFilePreview(path.trim());
+    rememberPath('history-file-path', path.trim());
+    rememberPath('history-password-file', pwFields.passwordFile.trim());
   } catch (err) {
     setStatus(statusEl, false, String(err));
   } finally {
@@ -592,11 +666,12 @@ function syncInlineFields() {
 inlineForm.querySelectorAll('input[name=inline-action]').forEach(function (r) {
   r.addEventListener('change', syncInlineFields);
 });
-setupPersistence('ansible-vault-gui:inline', inlineForm,
-  ['inline-name', 'inline-secret', 'inline-vaulttext', 'inline-password-value'],
+setupPersistence('ansible-vault-portable-gui:inline', inlineForm,
+  ['inline-name', 'inline-secret', 'inline-vaulttext'],
   ['inline-action', 'inline-password-mode'],
   ['inline-multiline']);
 setupPasswordMode(inlineForm, 'inline-password-mode', 'inline-password-value');
+setupPasswordModeStorage(inlineForm, 'inline-password-mode', 'inline-password-value', 'ansible-vault-portable-gui:inline');
 setupGeneratePassword(inlineForm, 'inline-action', 'inline-password-mode', 'inline-password-value');
 syncInlineFields();
 
@@ -611,13 +686,14 @@ inlineForm.addEventListener('submit', async function (e) {
   btn.disabled = true;
   try {
     const action = inlineForm.querySelector('input[name=inline-action]:checked').value;
+    const pwFields = passwordFieldsFromMode(inlineForm, 'inline-password-mode', 'inline-password-value');
     const body = Object.assign({
       action: action,
       name: document.getElementById('inline-name').value,
       secret: document.getElementById('inline-secret').value,
       multiline: document.getElementById('inline-multiline').checked,
       vaultText: document.getElementById('inline-vaulttext').value,
-    }, passwordFieldsFromMode(inlineForm, 'inline-password-mode', 'inline-password-value'));
+    }, pwFields);
     const resp = await callAPI('/api/inline', body);
     if (!resp.ok) {
       setStatus(statusEl, false, resp.message);
@@ -626,6 +702,7 @@ inlineForm.addEventListener('submit', async function (e) {
     resultText.value = resp.result;
     resultBox.hidden = false;
     setStatus(statusEl, true, 'Done.');
+    rememberPath('history-password-file', pwFields.passwordFile.trim());
   } catch (err) {
     setStatus(statusEl, false, String(err));
   } finally {

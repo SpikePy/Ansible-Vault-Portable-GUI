@@ -1,12 +1,12 @@
-# Ansible-Vault GUI
+# Ansible-Vault Portable GUI
 
-![Ansible-Vault GUI screenshot](docs/gui-screenshot.png)
+![Ansible-Vault Portable GUI screenshot](docs/gui-screenshot.png)
 
 A minimal, dependency-light local GUI for encrypting and decrypting
 [Ansible Vault](https://docs.ansible.com/ansible/latest/vault_guide/index.html)
 files and inline `!vault` secrets — written in Go, with no dependency on
 Python or `ansible-core`. Ships as a single static binary for Linux,
-Windows, and macOS: `ansible-vault-gui`.
+Windows, and macOS: `ansible-vault-portable-gui`.
 
 Implements the standard **AES256** vault cipher (format `1.1`/`1.2`):
 PBKDF2-HMAC-SHA256 key derivation, AES-256-CTR encryption, and an
@@ -37,8 +37,8 @@ Requires Go 1.21+.
 
 ```sh
 git clone <this-repo>
-cd ansible-vault-gui
-go build -o ansible-vault-gui .
+cd ansible-vault-portable-gui
+go build -o ansible-vault-portable-gui .
 ```
 
 ### Cross-compile
@@ -48,10 +48,10 @@ marks the binary as a GUI-subsystem app, so Windows never allocates a
 console for it, not even briefly).
 
 ```sh
-GOOS=linux   GOARCH=amd64   go build -ldflags="-s -w" -o dist/ansible-vault-gui .
-GOOS=windows GOARCH=amd64   go build -ldflags="-s -w -H=windowsgui" -o dist/ansible-vault-gui.exe .
-GOOS=darwin  GOARCH=amd64   go build -ldflags="-s -w" -o dist/ansible-vault-gui-macos-amd64 .
-GOOS=darwin  GOARCH=arm64   go build -ldflags="-s -w" -o dist/ansible-vault-gui-macos-arm64 .
+GOOS=linux   GOARCH=amd64   go build -ldflags="-s -w" -o dist/ansible-vault-portable-gui .
+GOOS=windows GOARCH=amd64   go build -ldflags="-s -w -H=windowsgui" -o dist/ansible-vault-portable-gui.exe .
+GOOS=darwin  GOARCH=amd64   go build -ldflags="-s -w" -o dist/ansible-vault-portable-gui-macos-amd64 .
+GOOS=darwin  GOARCH=arm64   go build -ldflags="-s -w" -o dist/ansible-vault-portable-gui-macos-arm64 .
 ```
 
 ### CI
@@ -82,10 +82,10 @@ file-write helper (`atomicwrite_test.go`), and the HTTP API handlers
 ## Usage
 
 ```sh
-ansible-vault-gui
+ansible-vault-portable-gui
 ```
 
-Or, on Windows, just double-click `ansible-vault-gui.exe`. Either way, a
+Or, on Windows, just double-click `ansible-vault-portable-gui.exe`. Either way, a
 local server starts (bound to `127.0.0.1` on a fixed port, `47990`, by
 default) and opens in your default browser — no arguments needed for
 everyday use.
@@ -107,7 +107,7 @@ safe. Ctrl+C also works if you're watching the terminal it was launched
 from.
 
 Only one instance can use a given port at a time; run a second one with
-`ansible-vault-gui -addr 127.0.0.1:<other-port>` (its browser storage,
+`ansible-vault-portable-gui -addr 127.0.0.1:<other-port>` (its browser storage,
 and therefore its remembered settings, will be separate from the default
 instance's).
 
@@ -191,6 +191,15 @@ password-manager extensions (Bitwarden, 1Password, etc.) generally ignore
 that hint by design and may still prompt to save — that's a limitation of
 the page having no reliable way to override another program's UI, not
 something worth fighting; just dismiss the prompt if it appears.
+
+The Password / Password file / Environment variable radio choice shares a
+single input field, but each of the three remembers its own separate
+value — switching from "Password" to "Password file" and back doesn't
+lose or mix up what you'd typed in either one.
+
+The file path field and the password-file field both offer a dropdown of
+the last 5 distinct paths used (shown when you click into the field) —
+browser-native autocomplete suggestions, not a custom widget.
 
 **Settings are remembered.** Every field — including passwords — is saved
 to the browser's local storage as you type and restored the next time you

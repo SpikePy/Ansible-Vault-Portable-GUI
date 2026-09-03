@@ -1,4 +1,4 @@
-module ansible-vault-gui
+module ansible-vault-portable-gui
 
 go 1.21
 
