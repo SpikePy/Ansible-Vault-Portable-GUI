@@ -198,8 +198,10 @@ value — switching from "Password" to "Password file" and back doesn't
 lose or mix up what you'd typed in either one.
 
 The file path field and the password-file field both offer a dropdown of
-the last 5 distinct paths used (shown when you click into the field) —
-browser-native autocomplete suggestions, not a custom widget.
+the last 5 distinct paths used, shown when you click into the field — it
+always shows the full history regardless of what's currently typed there
+(a native browser `<datalist>` would instead filter suggestions down to
+just whatever prefix-matches the field's current content).
 
 **Settings are remembered.** Every field — including passwords — is saved
 to the browser's local storage as you type and restored the next time you

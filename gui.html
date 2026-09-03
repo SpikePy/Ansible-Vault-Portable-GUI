@@ -43,7 +43,7 @@
   .password-options .row { margin-top:.6rem; margin-bottom:0; }
   .password-options .row:first-of-type { margin-top:0; }
   .password-row { display:flex; gap:.5rem; }
-  .password-row input { flex:1; }
+  .password-row .input-history-wrap { flex:1; }
   .toggle-pw-btn, .gen-pw-btn { white-space:nowrap; background:var(--panel); color:var(--fg); border:1px solid var(--border); }
   button { background:var(--accent); color:var(--accent-fg); border:none; padding:.6rem 1.2rem; border-radius:8px; font-size:.9rem; cursor:pointer; }
   button:disabled { opacity:.6; cursor:default; }
@@ -59,7 +59,19 @@
   .hint { color:var(--muted); font-size:.75rem; margin-top:.3rem; }
 
   .path-row { display:flex; gap:.5rem; }
-  .path-row input { flex:1; }
+  .path-row .input-history-wrap { flex:1; }
+
+  .input-history-wrap { position:relative; }
+  .path-history-dropdown {
+    position:absolute; top:100%; left:0; right:0; margin-top:.25rem; z-index:20;
+    background:var(--bg); border:1px solid var(--border); border-radius:8px;
+    max-height:10rem; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,.15);
+  }
+  .path-history-dropdown .entry {
+    padding:.45rem .6rem; font-family:var(--mono); font-size:.8rem; cursor:pointer;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .path-history-dropdown .entry:hover { background:var(--panel); }
   .browse-btn { white-space:nowrap; background:var(--panel); color:var(--fg); border:1px solid var(--border); }
 
   dialog#browse-dialog {
@@ -100,7 +112,10 @@
       <div class="row">
         <label for="file-path">File path</label>
         <div class="path-row">
-          <input type="text" id="file-path" placeholder="/path/to/secrets.yml" autocomplete="off" list="history-file-path">
+          <div class="input-history-wrap">
+            <input type="text" id="file-path" placeholder="/path/to/secrets.yml" autocomplete="off">
+            <div class="path-history-dropdown" id="file-path-history" hidden></div>
+          </div>
           <button type="button" class="browse-btn" data-browse-target="file-path">Browse…</button>
         </div>
         <p class="hint">encrypt always overwrites this file in place. decrypt only previews it by default — check the box below to actually overwrite it. Previewing also works on a file that isn't fully encrypted but has one or more inline "!vault" secrets in it — those get decrypted for display, everything else is shown as-is.</p>
@@ -120,7 +135,10 @@
         </div>
         <div class="row">
           <div class="password-row">
-            <input type="password" id="file-password-value" autocomplete="new-password">
+            <div class="input-history-wrap">
+              <input type="password" id="file-password-value" autocomplete="new-password">
+              <div class="path-history-dropdown" id="file-password-value-history" hidden></div>
+            </div>
             <button type="button" class="toggle-pw-btn" data-target="file-password-value" aria-label="Show password">👁</button>
             <button type="button" class="gen-pw-btn" data-target="file-password-value" hidden>🎲 Generate</button>
             <button type="button" class="browse-btn" data-browse-target="file-password-value" hidden>Browse…</button>
@@ -177,7 +195,10 @@
         </div>
         <div class="row">
           <div class="password-row">
-            <input type="password" id="inline-password-value" autocomplete="new-password">
+            <div class="input-history-wrap">
+              <input type="password" id="inline-password-value" autocomplete="new-password">
+              <div class="path-history-dropdown" id="inline-password-value-history" hidden></div>
+            </div>
             <button type="button" class="toggle-pw-btn" data-target="inline-password-value" aria-label="Show password">👁</button>
             <button type="button" class="gen-pw-btn" data-target="inline-password-value" hidden>🎲 Generate</button>
             <button type="button" class="browse-btn" data-browse-target="inline-password-value" hidden>Browse…</button>
@@ -213,9 +234,6 @@
     <button type="button" id="browse-cancel-btn">Cancel</button>
   </div>
 </dialog>
-
-<datalist id="history-file-path"></datalist>
-<datalist id="history-password-file"></datalist>
 
 <script>
 const TOKEN = "__TOKEN__";
@@ -352,13 +370,11 @@ function setupPasswordMode(formEl, modeGroupName, valueInputId) {
       input.type = 'text';
       toggleBtn.hidden = true;
       browseBtn.hidden = false;
-      input.setAttribute('list', 'history-password-file');
     } else {
       input.type = 'text';
       toggleBtn.hidden = true;
       browseBtn.hidden = true;
     }
-    if (mode !== 'file') input.removeAttribute('list');
   }
 
   formEl.querySelectorAll('input[name="' + modeGroupName + '"]').forEach(function (r) {
@@ -409,25 +425,19 @@ function setupPasswordModeStorage(formEl, modeGroupName, valueInputId, storageKe
 }
 
 // Remembers the last 5 distinct paths used for a given kind of file (vault
-// files, password files) and offers them as browser-native suggestions
-// (a <datalist> dropdown shown on focus/click) for next time.
+// files, password files) and shows them in a small dropdown under the
+// field on focus/click. A native <datalist> would seem like the simpler
+// choice here, but browsers filter its suggestions down to ones matching
+// whatever's already typed — since these fields are pre-filled from
+// persistence, that meant only the one entry matching the current value
+// ever showed. This dropdown always shows the full history regardless of
+// the field's current content.
 function recentPaths(historyId) {
   try {
     return JSON.parse(localStorage.getItem('ansible-vault-portable-gui:history:' + historyId) || '[]');
   } catch (e) {
     return [];
   }
-}
-
-function renderPathHistory(historyId) {
-  const datalist = document.getElementById(historyId);
-  if (!datalist) return;
-  datalist.innerHTML = '';
-  recentPaths(historyId).forEach(function (p) {
-    const opt = document.createElement('option');
-    opt.value = p;
-    datalist.appendChild(opt);
-  });
 }
 
 function rememberPath(historyId, path) {
@@ -438,11 +448,43 @@ function rememberPath(historyId, path) {
   try {
     localStorage.setItem('ansible-vault-portable-gui:history:' + historyId, JSON.stringify(list));
   } catch (e) { /* ignore */ }
-  renderPathHistory(historyId);
 }
 
-renderPathHistory('history-file-path');
-renderPathHistory('history-password-file');
+// isActive, if given, lets a single shared input (the password-source
+// field) only offer history while it currently represents that kind of
+// field — e.g. only in "Password file" mode, not "Password" or
+// "Environment variable".
+function setupPathHistoryDropdown(input, dropdown, historyId, isActive) {
+  function open() {
+    if (isActive && !isActive()) return;
+    dropdown.innerHTML = '';
+    const paths = recentPaths(historyId);
+    if (!paths.length) return;
+    paths.forEach(function (p) {
+      const entry = document.createElement('div');
+      entry.className = 'entry';
+      entry.textContent = p;
+      entry.title = p;
+      // mousedown (not click) + preventDefault keeps focus on the input
+      // instead of letting the click blur it first.
+      entry.addEventListener('mousedown', function (e) {
+        e.preventDefault();
+        input.value = p;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        dropdown.hidden = true;
+      });
+      dropdown.appendChild(entry);
+    });
+    dropdown.hidden = false;
+  }
+
+  input.addEventListener('focus', open);
+  input.addEventListener('click', open);
+  input.addEventListener('blur', function () { dropdown.hidden = true; });
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') dropdown.hidden = true;
+  });
+}
 
 // Unbiased random integer in [0, max) via rejection sampling.
 function randomInt(max) {
@@ -550,6 +592,9 @@ setupPersistence('ansible-vault-portable-gui:file', fileForm,
 setupPasswordMode(fileForm, 'file-password-mode', 'file-password-value');
 setupPasswordModeStorage(fileForm, 'file-password-mode', 'file-password-value', 'ansible-vault-portable-gui:file');
 setupGeneratePassword(fileForm, 'file-action', 'file-password-mode', 'file-password-value');
+setupPathHistoryDropdown(document.getElementById('file-path'), document.getElementById('file-path-history'), 'history-file-path');
+setupPathHistoryDropdown(document.getElementById('file-password-value'), document.getElementById('file-password-value-history'), 'history-password-file',
+  function () { return fileForm.querySelector('input[name=file-password-mode]:checked').value === 'file'; });
 syncFileOverwriteRow();
 
 const filePathInput = document.getElementById('file-path');
@@ -673,6 +718,8 @@ setupPersistence('ansible-vault-portable-gui:inline', inlineForm,
 setupPasswordMode(inlineForm, 'inline-password-mode', 'inline-password-value');
 setupPasswordModeStorage(inlineForm, 'inline-password-mode', 'inline-password-value', 'ansible-vault-portable-gui:inline');
 setupGeneratePassword(inlineForm, 'inline-action', 'inline-password-mode', 'inline-password-value');
+setupPathHistoryDropdown(document.getElementById('inline-password-value'), document.getElementById('inline-password-value-history'), 'history-password-file',
+  function () { return inlineForm.querySelector('input[name=inline-password-mode]:checked').value === 'file'; });
 syncInlineFields();
 
 inlineForm.addEventListener('submit', async function (e) {
