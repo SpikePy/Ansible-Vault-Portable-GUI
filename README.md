@@ -33,28 +33,6 @@ Grab the binary for your OS from the
 [latest release](https://github.com/SpikePy/Ansible-Vault-Portable-GUI/releases/latest) —
 no install step, just run it.
 
-### Build from source
-
-Requires Go 1.21+.
-
-```sh
-git clone <this-repo>
-cd ansible-vault-portable-gui
-go build -o ansible-vault-portable-gui .
-```
-
-### Cross-compile
-
-```sh
-GOOS=linux   GOARCH=amd64   go build -ldflags="-s -w" -o dist/ansible-vault-portable-gui .
-GOOS=windows GOARCH=amd64   go build -ldflags="-s -w -H=windowsgui" -o dist/ansible-vault-portable-gui.exe .
-GOOS=darwin  GOARCH=amd64   go build -ldflags="-s -w" -o dist/ansible-vault-portable-gui-macos-amd64 .
-GOOS=darwin  GOARCH=arm64   go build -ldflags="-s -w" -o dist/ansible-vault-portable-gui-macos-arm64 .
-```
-
-`-H=windowsgui` marks the Windows binary as a GUI-subsystem app, so it
-never briefly flashes a console.
-
 ## Usage
 
 ```sh
