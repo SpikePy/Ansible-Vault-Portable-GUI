@@ -132,6 +132,41 @@ func TestHandleFileEncryptDecryptView(t *testing.T) {
 	if string(onDisk) != "plaintext content" {
 		t.Errorf("file on disk after decrypt = %q, want %q", onDisk, "plaintext content")
 	}
+
+	// encrypt-preview must not modify the file.
+	rec = postJSON(t, handleFile, "/api/file", fileRequest{
+		Action: "encrypt-preview", Path: path, Password: "s3cret",
+	})
+	resp = decodeAPIResponse(t, rec)
+	if !resp.OK {
+		t.Fatalf("encrypt-preview: ok=false, message=%q", resp.Message)
+	}
+	if !strings.HasPrefix(resp.Result, vaultHeader) {
+		t.Errorf("encrypt-preview result missing vault header: %q", resp.Result)
+	}
+	onDisk, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(onDisk) != "plaintext content" {
+		t.Errorf("encrypt-preview modified the file on disk: %q", onDisk)
+	}
+
+	// encrypt-preview on an already-encrypted file must be refused, same as encrypt.
+	rec = postJSON(t, handleFile, "/api/file", fileRequest{
+		Action: "encrypt", Path: path, Password: "s3cret",
+	})
+	resp = decodeAPIResponse(t, rec)
+	if !resp.OK {
+		t.Fatalf("encrypt (to re-set up already-encrypted state): ok=false, message=%q", resp.Message)
+	}
+	rec = postJSON(t, handleFile, "/api/file", fileRequest{
+		Action: "encrypt-preview", Path: path, Password: "s3cret",
+	})
+	resp = decodeAPIResponse(t, rec)
+	if resp.OK {
+		t.Fatal("encrypt-preview on an already-encrypted file should have failed")
+	}
 }
 
 func TestHandleFileErrors(t *testing.T) {

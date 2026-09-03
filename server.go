@@ -136,7 +136,7 @@ func writeError(w http.ResponseWriter, err error) {
 }
 
 type fileRequest struct {
-	Action       string `json:"action"` // encrypt | decrypt | view
+	Action       string `json:"action"` // encrypt | decrypt | view | encrypt-preview
 	Path         string `json:"path"`
 	Password     string `json:"password"`
 	PasswordFile string `json:"passwordFile"`
@@ -153,7 +153,7 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, errors.New("file path is required"))
 		return
 	}
-	encrypt := req.Action == "encrypt"
+	encrypt := req.Action == "encrypt" || req.Action == "encrypt-preview"
 	pw, err := resolveGUIPassword(req.Password, req.PasswordFile, req.PasswordEnv)
 	if err != nil {
 		writeError(w, err)
@@ -184,6 +184,13 @@ func handleFile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, apiResponse{OK: true, Result: string(plaintext)})
+	case "encrypt-preview":
+		result, err := encryptVault(raw, pw, true)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, apiResponse{OK: true, Result: string(result)})
 	case "encrypt", "decrypt":
 		var result []byte
 		if encrypt {
