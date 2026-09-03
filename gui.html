@@ -30,6 +30,7 @@
   input[type=text], input[type=password], textarea {
     width:100%; padding:.5rem .6rem; border:1px solid var(--border); border-radius:8px;
     background:var(--bg); color:var(--fg); font-family:var(--mono); font-size:.85rem;
+    line-height:1.5;
   }
   textarea { min-height:6.5rem; resize:vertical; }
   .row { margin-bottom: .9rem; }
@@ -171,7 +172,7 @@
                   <label><input type="checkbox" class="genpw-class" value="lower" checked> Lowercase (a-z)</label>
                   <label><input type="checkbox" class="genpw-class" value="upper" checked> Uppercase (A-Z)</label>
                   <label><input type="checkbox" class="genpw-class" value="digits" checked> Digits (0-9)</label>
-                  <label><input type="checkbox" class="genpw-class" value="symbols" checked> Symbols (!@#$…)</label>
+                  <label><input type="checkbox" class="genpw-class" value="symbols" checked> Symbols (!?@#$%&*+-=)</label>
                 </div>
                 <label class="genpw-avoid-row"><input type="checkbox" class="genpw-avoid-similar" checked> Avoid similar-looking characters (0/O, 1/l/I)</label>
                 <p class="hint genpw-warning" hidden>Pick at least one character class.</p>
@@ -248,7 +249,7 @@
                   <label><input type="checkbox" class="genpw-class" value="lower" checked> Lowercase (a-z)</label>
                   <label><input type="checkbox" class="genpw-class" value="upper" checked> Uppercase (A-Z)</label>
                   <label><input type="checkbox" class="genpw-class" value="digits" checked> Digits (0-9)</label>
-                  <label><input type="checkbox" class="genpw-class" value="symbols" checked> Symbols (!@#$…)</label>
+                  <label><input type="checkbox" class="genpw-class" value="symbols" checked> Symbols (!?@#$%&*+-=)</label>
                 </div>
                 <label class="genpw-avoid-row"><input type="checkbox" class="genpw-avoid-similar" checked> Avoid similar-looking characters (0/O, 1/l/I)</label>
                 <p class="hint genpw-warning" hidden>Pick at least one character class.</p>
@@ -558,13 +559,13 @@ const PASSWORD_CHAR_CLASSES_FULL = {
   lower: 'abcdefghijklmnopqrstuvwxyz',
   upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
   digits: '0123456789',
-  symbols: '!@#$%^&*()-_=+',
+  symbols: '!?@#$%&*+-=',
 };
 const PASSWORD_CHAR_CLASSES_SAFE = {
   lower: 'abcdefghjkmnpqrstuvwxyz',
   upper: 'ABCDEFGHJKMNPQRSTUVWXYZ',
   digits: '23456789',
-  symbols: '!@#$%^&*()-_=+',
+  symbols: '!?@#$%&*+-=',
 };
 const PASSWORD_CHARSET_DEFAULT = Object.values(PASSWORD_CHAR_CLASSES_SAFE).join('');
 const GENPW_CONFIG_KEY = 'ansible-vault-portable-gui:genpw';

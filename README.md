@@ -132,8 +132,8 @@ A few smaller conveniences around the password fields:
   mix up what you'd typed
 - **🎲 Generate** (shown when encrypting with "Password" selected) opens
   a popover to set the password length and which character classes to
-  use (lowercase/uppercase/digits/symbols), with an option to avoid
-  similar-looking characters (`0`/`O`, `1`/`l`/`I`)
+  use — lowercase, uppercase, digits, and symbols (limited to `!?@#$%&*+-=`)
+  — with an option to avoid similar-looking characters (`0`/`O`, `1`/`l`/`I`)
 - The file path and password-file fields offer a dropdown of the last 5
   distinct paths used
 - All settings — including passwords — are remembered in the browser's
